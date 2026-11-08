@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#FFF1D0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#251B34" media="(prefers-color-scheme: dark)">
+<meta name="description" content="Les événements pour les enfants près de chez vous, au même endroit : mairies, cafés pour enfants, associations.">
+<title>Les P’tits Programmes – L’agenda des familles</title>
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Nunito:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="./">
+      <svg viewBox="0 0 40 40" aria-hidden="true"><path d="M3 9 Q20 22 37 9" fill="none" stroke="currentColor" stroke-width="2.5"/><path d="M6 11h9l-4.5 11z" fill="#F5C542" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M16 14h9l-4.5 11z" fill="#F4A9B8" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><path d="M26 11h9l-4.5 11z" fill="#A8CA6A" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+      Les P’tits Programmes
+    </a>
+    <a class="add" href="mailto:contact@exemple.fr?subject=Proposer%20un%20%C3%A9v%C3%A9nement">Proposer un événement</a>
+  </header>
+
+  <main>
+    <section class="hero">
+      <h1 id="title">L’agenda des familles</h1>
+      <p class="sub">Ateliers, spectacles et sorties pour les enfants, rassemblés depuis les mairies, les cafés pour enfants, les associations et les pages Facebook.</p>
+      <div class="where">
+        <label for="region">Où ?</label>
+        <select id="region"></select>
+        <button class="btn" id="loc" type="button">Autour de moi</button>
+      </div>
+      <p class="note" id="note" aria-live="polite"></p>
+    </section>
+
+    <section aria-label="Choisir un jour">
+      <div class="bunting" id="bunting">
+        <div class="bunting-in">
+          <svg class="string" viewBox="0 0 700 30" preserveAspectRatio="none" aria-hidden="true"><path d="M0 4 Q 88 26 175 6 T 350 6 T 525 6 T 700 4" fill="none" stroke="currentColor" stroke-width="2.5"/></svg>
+          <div class="flags" id="flags"></div>
+        </div>
+      </div>
+      <p class="hint">Touchez un fanion pour choisir un jour, touchez-le encore pour revoir toute la semaine.</p>
+    </section>
+
+    <section class="filters" aria-label="Filtres">
+      <div class="row" id="ages"><span class="lbl">Âge</span></div>
+      <div class="row" id="types"><span class="lbl">Type</span></div>
+      <div class="row"><span class="lbl">Prix</span><button class="chip" id="free" type="button" aria-pressed="false">Gratuit</button></div>
+    </section>
+
+    <section aria-live="polite">
+      <p class="count" id="count"></p>
+      <div id="list"></div>
+    </section>
+  </main>
+
+  <footer>Chaque fiche indique d’où vient l’information et renvoie vers l’annonce d’origine. Votre position n’est jamais enregistrée : seule la zone choisie reste sur votre appareil.</footer>
+</div>
+<script type="module" src="js/app.js"></script>
+</body>
+</html>
