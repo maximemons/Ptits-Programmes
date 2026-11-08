@@ -3,11 +3,12 @@ import { getFirestore, collection, query, where, orderBy, limit, getDocs, Timest
   from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
 import { COUNTRIES, ZONES } from './regions.js';
+import { exemples } from './exemples.js';
 
 const TYPES = { atelier: 'Atelier', spectacle: 'Spectacle', nature: 'Sortie nature', eveil: 'Éveil et contes', loisirs: 'Loisirs' };
 const AGES = [['Tous', null], ['0–3 ans', [0, 3]], ['3–6 ans', [3, 6]], ['6–12 ans', [6, 12]]];
 const COLORS = ['--sun', '--rose', '--leaf', '--sky', '--lav', '--sun', '--rose'];
-const S = { sel: '', day: null, age: null, free: false, type: null, events: [], state: 'loading' };
+const S = { sel: '', day: null, age: null, free: false, type: null, events: [], state: 'loading', demo: false, start: null };
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -22,13 +23,14 @@ const store = {
 const configured = firebaseConfig.projectId && !firebaseConfig.projectId.startsWith('VOTRE');
 const db = configured ? getFirestore(initializeApp(firebaseConfig)) : null;
 
+const WINDOW = 30; // nombre de jours chargés et affichés en fanions
 const today = new Date(); today.setHours(0, 0, 0, 0);
-const DAYS = [...Array(7)].map((_, i) => { const d = new Date(today); d.setDate(d.getDate() + i); return d; });
+const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+S.start = today;
+let DAYS = [];
+const DEMO = db ? [] : exemples();
 
 /* ---------- Interface : fanions, filtres, liste des zones ---------- */
-$('flags').innerHTML = DAYS.map((d, i) =>
-  `<button class="flag" type="button" data-k="${key(d)}" aria-pressed="false" style="--fc:var(${COLORS[i]})" aria-label="${d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}">` +
-  `<span class="dn">${d.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '')}</span><span class="dd">${d.getDate()}</span></button>`).join('');
 $('flags').addEventListener('click', e => {
   const b = e.target.closest('.flag'); if (!b) return;
   S.day = S.day === b.dataset.k ? null : b.dataset.k; render();
@@ -52,7 +54,7 @@ $('loc').onclick = () => locate();
 
 /* ---------- Zone et géolocalisation ---------- */
 function setSel(v) {
-  S.sel = v; S.day = null; $('region').value = v; store.set('sel', v); load();
+  S.sel = v; $('region').value = v; store.set('sel', v); load();
 }
 
 function titleFor() {
@@ -99,14 +101,19 @@ let seq = 0;
 async function load() {
   const id = ++seq;
   S.state = 'loading'; render();
-  if (!db) { S.state = 'noconfig'; render(); return; }
-  const end = new Date(today); end.setDate(end.getDate() + 7);
+  const end = addDays(S.start, WINDOW);
+  if (!db) {
+    S.demo = true;
+    S.events = DEMO.filter(e => (!S.sel || (S.sel.length === 2 ? e.country === S.sel : e.regionId === S.sel)) && e.startsAt >= S.start && e.startsAt < end)
+      .map((e, i) => ({ ...e, id: 'demo' + i, d: e.startsAt })).sort((a, b) => a.d - b.d);
+    S.state = 'ok'; render(); return;
+  }
   const c = [where('status', '==', 'published')];
   if (S.sel.length === 2) c.push(where('country', '==', S.sel));
   else if (S.sel) c.push(where('regionId', '==', S.sel));
-  c.push(where('startsAt', '>=', Timestamp.fromDate(today)), where('startsAt', '<', Timestamp.fromDate(end)));
+  c.push(where('startsAt', '>=', Timestamp.fromDate(S.start)), where('startsAt', '<', Timestamp.fromDate(end)));
   try {
-    const snap = await getDocs(query(collection(db, 'events'), ...c, orderBy('startsAt'), limit(200)));
+    const snap = await getDocs(query(collection(db, 'events'), ...c, orderBy('startsAt'), limit(500)));
     if (id !== seq) return;
     S.events = snap.docs.map(x => { const v = x.data(); return { ...v, id: x.id, d: v.startsAt.toDate() }; });
     S.state = 'ok';
@@ -127,6 +134,7 @@ function render() {
   document.querySelectorAll('#ages .chip').forEach(b => b.setAttribute('aria-pressed', AGES[b.dataset.i][1] === S.age));
   document.querySelectorAll('#types .chip').forEach(b => b.setAttribute('aria-pressed', b.dataset.k === S.type));
   $('free').setAttribute('aria-pressed', S.free);
+  $('pick').value = S.day || '';
 
   const msg = (t, retry) => { $('list').innerHTML = `<div class="state"><p>${t}</p>${retry ? '<button class="btn" id="retry" type="button">Réessayer</button>' : ''}</div>`; if (retry) $('retry').onclick = load; };
   if (S.state === 'loading') { $('count').textContent = 'Chargement…'; $('list').innerHTML = ''; return; }
@@ -140,8 +148,9 @@ function render() {
   });
 
   const dayName = d => d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
-  const when = S.day ? 'le ' + dayName(DAYS.find(d => key(d) === S.day)) : 'cette semaine';
+  const when = S.day ? 'le ' + dayName(DAYS.find(d => key(d) === S.day)) : S.start > today ? 'à partir du ' + dayName(S.start) : 'dans les 2 prochains mois';
   $('count').textContent = list.length ? `${list.length} événement${list.length > 1 ? 's' : ''} ${when}` : 'Aucun événement trouvé';
+  if (S.demo) $('count').textContent += ' (exemples)';
   if (!list.length) {
     $('list').innerHTML = '<div class="empty"><p>Rien de prévu avec ces choix. Essayez un autre jour, une autre zone ou retirez un filtre.</p><button class="btn" type="button" id="rst">Tout réafficher</button></div>';
     $('rst').onclick = () => { Object.assign(S, { day: null, age: null, free: false, type: null }); render(); };
@@ -153,7 +162,7 @@ function render() {
     const k = TYPES[e.type] ? e.type : 'loisirs';
     const time = e.d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }).replace(':', 'h');
     const age = e.ageMin != null && e.ageMax != null ? `<span>${esc(e.ageMin)}–${esc(e.ageMax)} ans</span>` : '';
-    const price = typeof e.price === 'number' ? `<span class="price${e.price ? '' : ' free'}">${e.price ? esc(e.price) + ' €' : 'Gratuit'}</span>` : '';
+    const price = typeof e.price === 'number' ? `<span class="price${e.price ? '' : ' free'}">${e.price ? esc(e.price) + ' ' + esc(e.currency || '€') : 'Gratuit'}</span>` : '';
     const src = e.sourceName ? `Trouvé sur : ${esc(e.sourceName)}. ` : '';
     const link = /^https?:\/\//.test(e.sourceUrl || '') ? `<a href="${esc(e.sourceUrl)}" target="_blank" rel="noopener noreferrer">Voir l’annonce d’origine</a>` : '';
     out += `<article class="card t-${k}"><div class="when">${time}</div><div class="body">
@@ -164,7 +173,33 @@ function render() {
   $('list').innerHTML = out;
 }
 
+/* ---------- Fanions (30 jours) et choix d’une date ---------- */
+function buildFlags() {
+  DAYS = [...Array(WINDOW)].map((_, i) => addDays(S.start, i));
+  $('flags').innerHTML = DAYS.map((d, i) => {
+    const mo = i === 0 || d.getDate() === 1 ? `<span class="mo">${d.toLocaleDateString('fr-FR', { month: 'long' })}</span>` : '';
+    return mo + `<button class="flag" type="button" data-k="${key(d)}" aria-pressed="false" style="--fc:var(${COLORS[i % 7]})" aria-label="${d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}">` +
+      `<span class="dn">${d.toLocaleDateString('fr-FR', { weekday: 'short' }).replace('.', '')}</span><span class="dd">${d.getDate()}</span></button>`;
+  }).join('');
+}
+function scrollToDay() {
+  const b = document.querySelector('.flag[aria-pressed="true"]'), w = $('bunting');
+  if (b) w.scrollTo({ left: b.offsetLeft + b.offsetParent.offsetLeft - (w.clientWidth - b.offsetWidth) / 2, behavior: 'smooth' });
+}
+function goTo(d) {
+  S.day = key(d);
+  if (d >= S.start && d < addDays(S.start, WINDOW)) render();
+  else { S.start = d; buildFlags(); load(); }
+  requestAnimationFrame(scrollToDay);
+}
+$('prev').onclick = () => $('bunting').scrollBy({ left: -$('bunting').clientWidth * 0.8, behavior: 'smooth' });
+$('next').onclick = () => $('bunting').scrollBy({ left: $('bunting').clientWidth * 0.8, behavior: 'smooth' });
+$('pick').min = key(today);
+$('pick').onchange = e => { if (e.target.value) goTo(new Date(e.target.value + 'T00:00:00')); };
+$('home').onclick = () => { S.start = today; S.day = null; buildFlags(); $('bunting').scrollTo({ left: 0 }); load(); };
+
 /* ---------- Démarrage : zone mémorisée, sinon géolocalisation proposée d’emblée ---------- */
+buildFlags();
 const saved = store.get('sel');
 if (saved !== null && (saved === '' || COUNTRIES[saved] || ZONES.some(z => z.id === saved))) {
   S.sel = saved; $('region').value = saved; load();

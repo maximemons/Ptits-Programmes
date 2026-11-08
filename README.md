@@ -17,8 +17,10 @@ Zones disponibles :
 
 ## Parcourir les événements
 
-- Les événements des 7 prochains jours sont regroupés par jour, dans l’ordre chronologique.
-- Une guirlande de fanions permet de n’afficher qu’un seul jour. Un second clic revient à toute la semaine.
+- Les événements des 60 prochains jours sont regroupés par jour, dans l’ordre chronologique.
+- Une guirlande de 60 fanions, calculée à partir de la date du jour (rien n’est écrit en dur), permet de n’afficher qu’un seul jour. Un second clic revient à la vue complète. Les noms de mois s’affichent entre les fanions.
+- Les flèches ‹ › font défiler la guirlande, et « Aujourd’hui » revient au début.
+- Le sélecteur « Aller à une date » permet de viser n’importe quel jour à venir : si la date est au-delà des 60 jours chargés, la guirlande et les événements repartent de cette date. La durée affichée se règle avec `WINDOW` dans `js/app.js`.
 - Les filtres combinables : âge (0–3, 3–6, 6–12 ans), type (atelier, spectacle, sortie nature, éveil et contes, loisirs) et gratuit.
 - Si rien ne correspond, un bouton « Tout réafficher » réinitialise les filtres.
 
@@ -49,6 +51,8 @@ css/style.css
 js/app.js               affichage, filtres, géolocalisation, lecture Firestore
 js/regions.js           pays et zones (France, Belgique, Suisse)
 js/firebase-config.js   configuration du projet Firebase
+js/exemples.js          événements d’exemple, générés à partir de la date du jour
+tools/seed.mjs          import des exemples dans Firestore (SDK Admin)
 ```
 
 ## Mise en place de Firebase
@@ -85,6 +89,11 @@ service cloud.firestore {
    Si un index manque, la console du navigateur affiche un lien qui le crée en un clic.
 5. Ajouter les événements dans la collection `events` depuis la console Firebase (ou avec le SDK Admin pour des imports).
 
+## Données d’exemple et mode démo
+
+- Tant que `js/firebase-config.js` n’est pas renseigné, le site passe en **mode démo** : il affiche les événements de `js/exemples.js` (environ 180 événements sur 2 mois, dans 3 pays et une vingtaine de zones, marqués « (exemples) »). Les dates sont recalculées à chaque ouverture.
+- Pour mettre ces exemples dans Firestore : `cd tools && npm install firebase-admin`, puis `GOOGLE_APPLICATION_CREDENTIALS=cle.json node seed.mjs`. Les exemples portent `isExample: true` et se retirent avec `node seed.mjs --supprimer`. Les dates sont fixées à l’import : relancer le script pour les actualiser.
+
 ## Modèle de données
 
 Collection `events` :
@@ -99,6 +108,7 @@ Collection `events` :
 | ageMin, ageMax | nombre | 3, 7 |
 | type | `atelier`, `spectacle`, `nature`, `eveil`, `loisirs` | eveil |
 | price | nombre (0 = gratuit) | 0 |
+| currency | texte, facultatif (€ par défaut) | CHF |
 | sourceName, sourceUrl | texte | Ville de Quimper, https://… |
 | status | `published` ou `pending` | published |
 
