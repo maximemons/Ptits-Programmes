@@ -3,12 +3,11 @@ import { getFirestore, collection, query, where, orderBy, limit, getDocs, Timest
   from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
 import { COUNTRIES, ZONES } from './regions.js';
-import { exemples } from './exemples.js';
 
 const TYPES = { atelier: 'Atelier', spectacle: 'Spectacle', nature: 'Sortie nature', eveil: 'Éveil et contes', loisirs: 'Loisirs' };
 const AGES = [['Tous', null], ['0–3 ans', [0, 3]], ['3–6 ans', [3, 6]], ['6–12 ans', [6, 12]]];
 const COLORS = ['--sun', '--rose', '--leaf', '--sky', '--lav', '--sun', '--rose'];
-const S = { sel: '', day: null, age: null, free: false, type: null, events: [], state: 'loading', demo: false, start: null };
+const S = { sel: '', day: null, age: null, free: false, type: null, events: [], state: 'loading', start: null };
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -23,12 +22,11 @@ const store = {
 const configured = firebaseConfig.projectId && !firebaseConfig.projectId.startsWith('VOTRE');
 const db = configured ? getFirestore(initializeApp(firebaseConfig)) : null;
 
-const WINDOW = 30; // nombre de jours chargés et affichés en fanions
+const WINDOW = 60; // nombre de jours chargés et affichés en fanions
 const today = new Date(); today.setHours(0, 0, 0, 0);
 const addDays = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
 S.start = today;
 let DAYS = [];
-const DEMO = db ? [] : exemples();
 
 /* ---------- Interface : fanions, filtres, liste des zones ---------- */
 $('flags').addEventListener('click', e => {
@@ -102,12 +100,7 @@ async function load() {
   const id = ++seq;
   S.state = 'loading'; render();
   const end = addDays(S.start, WINDOW);
-  if (!db) {
-    S.demo = true;
-    S.events = DEMO.filter(e => (!S.sel || (S.sel.length === 2 ? e.country === S.sel : e.regionId === S.sel)) && e.startsAt >= S.start && e.startsAt < end)
-      .map((e, i) => ({ ...e, id: 'demo' + i, d: e.startsAt })).sort((a, b) => a.d - b.d);
-    S.state = 'ok'; render(); return;
-  }
+  if (!db) { S.state = 'noconfig'; render(); return; }
   const c = [where('status', '==', 'published')];
   if (S.sel.length === 2) c.push(where('country', '==', S.sel));
   else if (S.sel) c.push(where('regionId', '==', S.sel));
@@ -150,7 +143,6 @@ function render() {
   const dayName = d => d.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
   const when = S.day ? 'le ' + dayName(DAYS.find(d => key(d) === S.day)) : S.start > today ? 'à partir du ' + dayName(S.start) : 'dans les 2 prochains mois';
   $('count').textContent = list.length ? `${list.length} événement${list.length > 1 ? 's' : ''} ${when}` : 'Aucun événement trouvé';
-  if (S.demo) $('count').textContent += ' (exemples)';
   if (!list.length) {
     $('list').innerHTML = '<div class="empty"><p>Rien de prévu avec ces choix. Essayez un autre jour, une autre zone ou retirez un filtre.</p><button class="btn" type="button" id="rst">Tout réafficher</button></div>';
     $('rst').onclick = () => { Object.assign(S, { day: null, age: null, free: false, type: null }); render(); };
@@ -173,7 +165,7 @@ function render() {
   $('list').innerHTML = out;
 }
 
-/* ---------- Fanions (30 jours) et choix d’une date ---------- */
+/* ---------- Fanions (60 jours) et choix d’une date ---------- */
 function buildFlags() {
   DAYS = [...Array(WINDOW)].map((_, i) => addDays(S.start, i));
   $('flags').innerHTML = DAYS.map((d, i) => {

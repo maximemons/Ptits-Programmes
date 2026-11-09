@@ -51,8 +51,6 @@ css/style.css
 js/app.js               affichage, filtres, géolocalisation, lecture Firestore
 js/regions.js           pays et zones (France, Belgique, Suisse)
 js/firebase-config.js   configuration du projet Firebase
-js/exemples.js          événements d’exemple, générés à partir de la date du jour
-tools/seed.mjs          import des exemples dans Firestore (SDK Admin)
 ```
 
 ## Mise en place de Firebase
@@ -88,11 +86,6 @@ service cloud.firestore {
 
    Si un index manque, la console du navigateur affiche un lien qui le crée en un clic.
 5. Ajouter les événements dans la collection `events` depuis la console Firebase (ou avec le SDK Admin pour des imports).
-
-## Données d’exemple et mode démo
-
-- Tant que `js/firebase-config.js` n’est pas renseigné, le site passe en **mode démo** : il affiche les événements de `js/exemples.js` (environ 180 événements sur 2 mois, dans 3 pays et une vingtaine de zones, marqués « (exemples) »). Les dates sont recalculées à chaque ouverture.
-- Pour mettre ces exemples dans Firestore : `cd tools && npm install firebase-admin`, puis `GOOGLE_APPLICATION_CREDENTIALS=cle.json node seed.mjs`. Les exemples portent `isExample: true` et se retirent avec `node seed.mjs --supprimer`. Les dates sont fixées à l’import : relancer le script pour les actualiser.
 
 ## Modèle de données
 
