@@ -115,11 +115,21 @@ select{font-size:16px;max-width:100%}
 input[type="date"]{font:800 16px var(--text);color:var(--ink);background:var(--surface);border:2px solid var(--ink);border-radius:12px;padding:7px 12px;min-height:44px}
 .btn.sm{padding:4px 0;min-width:44px;justify-content:center;font-size:1.5rem;line-height:1}
 
-
-/* Mobile : le sélecteur de zone garde sa hauteur normale */
-@media (max-width: 520px) {
-  .where select {
-    flex: none;
-    width: 100%;
-  }
-}
+/* ---- Pages proposer / admin ---- */
+[hidden]{display:none!important}
+.panel{background:var(--surface);border:2px solid var(--ink);border-radius:18px;box-shadow:4px 4px 0 var(--ink);padding:20px;margin-bottom:20px}
+.form{display:grid;gap:14px;grid-template-columns:1fr 1fr}
+.form .full{grid-column:1/-1}
+.form label{display:grid;gap:4px;font-weight:800}
+.form input,.form select{font:600 16px var(--text);color:var(--ink);background:var(--bg);border:2px solid var(--ink);border-radius:12px;padding:8px 12px;min-height:44px;width:100%}
+.tabs{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px}
+.btn.ok{background:var(--leaf);color:var(--on)}
+.btn.ko{background:var(--rose);color:var(--on)}
+.score,.pill{display:inline-block;font-weight:800;font-size:.85rem;border:2px solid var(--ink);border-radius:999px;padding:0 10px;background:var(--sun);color:var(--on)}
+.score.low,.pill.rejected{background:var(--rose)}
+.pill.published{background:var(--leaf)}
+.pill.pending{background:var(--sky)}
+.mine{margin:0 0 8px}
+#who{display:flex;align-items:center;gap:8px;font-weight:700;font-size:.9rem}
+@media (max-width:520px){.form{grid-template-columns:1fr}#name{display:none}}

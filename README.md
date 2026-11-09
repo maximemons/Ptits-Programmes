@@ -24,6 +24,24 @@ Zones disponibles :
 - Les filtres combinables : âge (0–3, 3–6, 6–12 ans), type (atelier, spectacle, sortie nature, éveil et contes, loisirs) et gratuit.
 - Si rien ne correspond, un bouton « Tout réafficher » réinitialise les filtres.
 
+## Proposer un événement
+
+- Le lien « Proposer un événement » ouvre `proposer.html` dans un nouvel onglet. Aucune connexion n’apparaît sur la page d’accueil.
+- Le visiteur se connecte avec Google, ou est directement reconnu s’il s’est déjà connecté sur cet appareil.
+- Le formulaire crée un événement avec `status: "pending"` : il reste invisible tant qu’il n’est pas validé.
+- La page affiche les propositions du compte avec leur état (en attente, publié, refusé) et son score de fiabilité.
+
+## Administration
+
+- `admin.html` est réservée au compte Google dont l’adresse figure dans les règles Firestore (`isAdmin`). Toute autre personne reçoit « Accès réservé ».
+- Trois onglets : **À valider**, **Peu fiables** et **Publiés** (pour dépublier).
+- **Valider** publie l’événement et ajoute des points au proposant ; **Refuser** en retire. Le barème se règle en haut de `js/admin.js` (`POINTS_OK`, `POINTS_KO`, `SEUIL`) : +1, −2, et « peu fiable » à partir de −3.
+- Un compte sous le seuil voit ses nouvelles propositions arriver dans l’onglet **Peu fiables**, pour ne pas encombrer la file principale.
+- L’onglet **Ajouter** publie directement un événement, sans validation ni score. Il peut se répéter toutes les semaines (par exemple tous les jeudis) ou toutes les 2 semaines jusqu’à une date de fin, 100 dates au maximum : une fiche est créée par date, reliées par un `seriesId`.
+- Dans **Publiés** (les 100 prochaines dates), « Supprimer la série » retire toutes les dates d’un événement répété.
+- Dépublier un événement déjà validé annule le gain et applique la pénalité.
+- Les scores sont dans la collection `users`, modifiable uniquement par l’administrateur.
+
 ## Les cartes d’événement
 
 Chaque carte affiche :
@@ -45,35 +63,58 @@ L’âge, le prix et le lien sont facultatifs : un champ absent n’est tout sim
 
 ```
 index.html
+proposer.html           formulaire de proposition (connexion Google)
+admin.html              validation des propositions (administrateur)
 favicon.ico
 README.md
 css/style.css
 js/app.js               affichage, filtres, géolocalisation, lecture Firestore
 js/regions.js           pays et zones (France, Belgique, Suisse)
 js/firebase-config.js   configuration du projet Firebase
+js/firebase.js          initialisation partagée (Firestore, connexion Google)
+js/proposer.js          formulaire et suivi des propositions
+js/admin.js             file de validation et score de fiabilité
 ```
 
 ## Mise en place de Firebase
 
 1. Créer un projet sur https://console.firebase.google.com et activer **Firestore Database**.
 2. Ajouter une application Web et copier sa configuration dans `js/firebase-config.js`. Ces valeurs ne sont pas secrètes : la sécurité repose sur les règles ci-dessous.
-3. Dans Firestore > Règles, coller :
+3. Dans Firestore > Règles, coller ceci en remplaçant `VOTRE_EMAIL@gmail.com` par l’adresse Google de l’administrateur :
 
 ```
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    match /events/{id} {
-      allow read: if resource.data.status == 'published';
-      allow write: if false;
+
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email == 'VOTRE_EMAIL@gmail.com'
+        && request.auth.token.email_verified == true;
     }
-    match /submissions/{id} {
-      allow create: if request.resource.data.keys().hasOnly(
-          ['title', 'place', 'city', 'regionId', 'startsAt', 'sourceUrl', 'contactEmail', 'createdAt'])
+
+    match /events/{id} {
+      allow read: if resource.data.status == 'published'
+        || isAdmin()
+        || (request.auth != null && resource.data.submittedBy == request.auth.uid);
+      allow create: if request.auth != null
+        && request.resource.data.status == 'pending'
+        && request.resource.data.submittedBy == request.auth.uid
+        && request.resource.data.createdAt == request.time
+        && request.resource.data.keys().hasAll(['title', 'startsAt', 'country', 'regionId', 'city'])
+        && request.resource.data.keys().hasOnly(['title', 'startsAt', 'country', 'regionId', 'city', 'place',
+            'ageMin', 'ageMax', 'type', 'price', 'currency', 'sourceName', 'sourceUrl',
+            'status', 'submittedBy', 'submitterName', 'createdAt'])
         && request.resource.data.title is string
         && request.resource.data.title.size() > 2 && request.resource.data.title.size() < 140
-        && request.resource.data.createdAt == request.time;
-      allow read, update, delete: if false;
+        && request.resource.data.startsAt is timestamp;
+      allow update, delete: if isAdmin();
+      allow create: if isAdmin();
+    }
+
+    match /users/{uid} {
+      allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
+      allow write: if isAdmin();
     }
   }
 }
@@ -85,7 +126,8 @@ service cloud.firestore {
    - `status`, `regionId`, `startsAt`
 
    Si un index manque, la console du navigateur affiche un lien qui le crée en un clic.
-5. Ajouter les événements dans la collection `events` depuis la console Firebase (ou avec le SDK Admin pour des imports).
+5. Dans **Authentication** > Sign-in method, activer le fournisseur **Google**, puis dans Paramètres > Domaines autorisés, ajouter le domaine du site (par exemple `utilisateur.github.io`).
+6. Ajouter les événements dans la collection `events` depuis la console Firebase (ou avec le SDK Admin pour des imports).
 
 ## Modèle de données
 
@@ -103,11 +145,14 @@ Collection `events` :
 | price | nombre (0 = gratuit) | 0 |
 | currency | texte, facultatif (€ par défaut) | CHF |
 | sourceName, sourceUrl | texte | Ville de Quimper, https://… |
-| status | `published` ou `pending` | published |
+| seriesId | texte, présent sur les événements répétés | 3f2a… |
+| status | `published`, `pending` ou `rejected` | published |
+| submittedBy, submitterName | texte (rempli par le formulaire) | uid Google, Camille |
+| createdAt, reviewedAt | horodatage (remplis par le site) | |
 
 Les identifiants de zone sont de la forme `<pays>-<code>` : `fr-bre` (Bretagne), `fr-hdf` (Hauts-de-France), `be-bru` (Bruxelles-Capitale), `ch-ge` (Genève).
 
-Collection `submissions` : propositions de visiteurs, en création seule, à modérer puis recopier dans `events`.
+Collection `users/{uid}` : `name` et `score` de fiabilité, créée automatiquement à la première décision de l’administrateur.
 
 ## Ajouter un pays ou un niveau plus fin
 

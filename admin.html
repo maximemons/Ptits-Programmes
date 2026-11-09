@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#FFF1D0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#251B34" media="(prefers-color-scheme: dark)">
+<meta name="robots" content="noindex">
+<title>Administration – Les P’tits Programmes</title>
+<link rel="icon" href="favicon.ico" sizes="any">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@600;800&family=Nunito:wght@400;600;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <a class="brand" href="./">Les P’tits Programmes</a>
+    <div id="who" hidden><span id="name"></span> <button class="chip" id="out" type="button">Se déconnecter</button></div>
+  </header>
+  <main>
+    <section class="hero"><h1>Administration</h1></section>
+    <section id="login" class="panel" hidden>
+      <p>Connectez-vous avec votre compte Google pour continuer.</p>
+      <button class="btn" id="go" type="button">Continuer avec Google</button>
+      <p class="note" id="err" aria-live="polite"></p>
+    </section>
+    <section id="app" hidden>
+      <div class="tabs" id="tabs">
+        <button class="chip" type="button" data-t="todo" aria-pressed="true">À valider</button>
+        <button class="chip" type="button" data-t="low" aria-pressed="false">Peu fiables</button>
+        <button class="chip" type="button" data-t="pub" aria-pressed="false">Publiés</button>
+        <button class="chip" type="button" data-t="add" aria-pressed="false">Ajouter</button>
+      </div>
+      <p class="note" id="info"></p>
+      <form id="f" class="panel form" hidden>
+        <label class="full">Titre *<input name="title" required minlength="3" maxlength="139"></label>
+        <label>Date (1re occurrence) *<input type="date" name="date" id="date" required></label>
+        <label>Heure *<input type="time" name="time" required></label>
+        <label>Ville *<input name="city" required></label>
+        <label>Lieu<input name="place"></label>
+        <label class="full">Zone *<select name="zone" id="zone" required></select></label>
+        <label>Âge min<input type="number" name="ageMin" min="0" max="17" inputmode="numeric"></label>
+        <label>Âge max<input type="number" name="ageMax" min="0" max="17" inputmode="numeric"></label>
+        <label>Type<select name="type"><option value="">—</option><option value="atelier">Atelier</option><option value="spectacle">Spectacle</option><option value="nature">Sortie nature</option><option value="eveil">Éveil et contes</option><option value="loisirs">Loisirs</option></select></label>
+        <label>Prix (0 = gratuit)<input type="number" name="price" min="0" step="0.5" inputmode="decimal"></label>
+        <label class="full">Lien de l’annonce<input type="url" name="sourceUrl" placeholder="https://…"></label>
+        <label class="full">Source<input name="sourceName"></label>
+        <label>Répétition<select name="repeat"><option value="">Une seule fois</option><option value="weekly">Toutes les semaines (même jour)</option><option value="biweekly">Toutes les 2 semaines</option></select></label>
+        <label>Jusqu’au (si répété)<input type="date" name="until"></label>
+        <div class="full"><button class="btn ok" id="send" type="submit">Publier</button><p class="note" id="msg" aria-live="polite"></p></div>
+      </form>
+      <div id="list"></div>
+    </section>
+  </main>
+</div>
+<script type="module" src="js/admin.js"></script>
+</body>
+</html>

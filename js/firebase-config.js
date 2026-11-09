@@ -1,5 +1,3 @@
-// Console Firebase > Paramètres du projet > Vos applications > Application Web > Configuration.
-// Ces valeurs ne sont pas secrètes : la sécurité repose sur firestore.rules.
 export const firebaseConfig = {
     apiKey: "AIzaSyCnlp09HpT2egNL1tF8CzmeNVsHlqPJc74",
     authDomain: "p-tits-programmes.firebaseapp.com",
