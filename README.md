@@ -79,6 +79,8 @@ js/regions.js           pays et zones (France, Belgique, Suisse)
 js/firebase-config.js   configuration du projet Firebase
 js/firebase.js          initialisation partagée (Firestore, connexion Google)
 js/maps.js              lien d’itinéraire (GPS ou Google Maps)
+scripts/purge.mjs        purge des événements passés (lancé par la CI)
+.gitlab-ci.yml          pipeline planifié de purge
 js/proposer.js          formulaire et suivi des propositions
 js/admin.js             file de validation et score de fiabilité
 ```
@@ -180,6 +182,16 @@ Collection `users/{uid}` (lecture et écriture réservées à l’administrateur
 ## Ajouter un pays ou un niveau plus fin
 
 Ajouter une entrée dans `COUNTRIES` et dans `RAW` (`js/regions.js`) : chaque zone se décrit par un code, un nom, la forme « de … » pour le titre et les coordonnées de son centre. Rien d’autre à modifier.
+
+## Purge des événements passés
+
+Un pipeline GitLab planifié supprime les événements commencés depuis plus de 7 jours (propositions en attente ou refusées comprises). Le site n’affiche de toute façon que les dates à venir : la purge sert à garder une base légère.
+
+1. Créer une clé de compte de service (console Firebase > Paramètres du projet > Comptes de service). De préférence un compte dédié avec le seul rôle « Cloud Datastore User ». Ne jamais commiter la clé.
+2. GitLab > Paramètres > CI/CD > Variables : ajouter `GOOGLE_APPLICATION_CREDENTIALS`, type **File**, avec le contenu du JSON, et cocher « Protected ».
+3. Tester d’abord sans rien supprimer : ajouter `DRY_RUN` = `true`, puis CI/CD > Pipelines > **Run pipeline** (branche `main`). Le journal du job indique combien d’événements seraient supprimés.
+4. Retirer `DRY_RUN`, puis CI/CD > **Schedules** > nouvelle planification, par exemple `0 4 * * 0` (chaque dimanche à 4 h), branche `main`.
+5. Pour changer la durée de conservation, ajouter la variable `RETENTION_DAYS` (7 par défaut).
 
 ## Géolocalisation : à savoir
 

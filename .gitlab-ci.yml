@@ -1,0 +1,9 @@
+# Purge des événements passés : pipeline planifié (CI/CD > Schedules) ou lancé à la main (Run pipeline).
+# Variables CI/CD : GOOGLE_APPLICATION_CREDENTIALS (type File, protégée), RETENTION_DAYS et DRY_RUN (facultatives).
+purge-events:
+  image: node:20
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" || $CI_PIPELINE_SOURCE == "web"
+  script:
+    - npm install --no-save firebase-admin
+    - node scripts/purge.mjs
