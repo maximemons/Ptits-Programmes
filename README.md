@@ -30,6 +30,7 @@ Zones disponibles :
 - Le visiteur se connecte avec Google, ou est directement reconnu s’il s’est déjà connecté sur cet appareil.
 - Le formulaire crée un événement avec `status: "pending"` : il reste invisible tant qu’il n’est pas validé.
 - La page affiche les propositions du compte avec leur état (en attente, publié, refusé) et propose par défaut sa zone (celle mémorisée sur la page d’accueil, sinon sa position). Le score de fiabilité n’est jamais visible par le proposant.
+- Chaque proposition en attente ou refusée a un bouton « Supprimer ». Une proposition déjà publiée ne peut être retirée que par l’administrateur.
 - On peut indiquer une heure de début et de fin, et une fréquence (toutes les semaines ou toutes les 2 semaines jusqu’à une date, un an maximum). Une proposition récurrente reste une seule fiche en attente : toutes les dates sont créées quand elle est validée.
 - L’administrateur voit un bouton « Page admin » ; il est détecté par la lecture de la collection `users`, réservée à l’administrateur.
 
@@ -41,6 +42,8 @@ Zones disponibles :
 - Un compte sous le seuil voit ses nouvelles propositions arriver dans l’onglet **Pas fiables**, pour ne pas encombrer la file principale.
 - L’onglet **Ajouter** publie directement un événement, sans validation ni score. Il peut se répéter toutes les semaines (par exemple tous les jeudis) ou toutes les 2 semaines jusqu’à une date de fin, 100 dates au maximum : une fiche est créée par date, reliées par un `seriesId`.
 - Dans **Publiés** (les 100 prochaines dates), « Supprimer la série » retire toutes les dates d’un événement répété.
+- « Supprimer » efface définitivement un événement publié, sans effet sur le score ; « Dépublier » le refuse, avec la pénalité.
+- « Éditer » (sur les événements à valider et publiés) ouvre le formulaire pré-rempli : titre, date, heures, lieu, adresse, zone, âges, prix et source sont modifiables, et un champ vidé est retiré de la fiche. Pour un événement répété, une case permet d’appliquer les changements communs aux autres dates de la série ; les dates et heures ne se modifient que sur la fiche éditée.
 - Dépublier un événement déjà validé annule le gain et applique la pénalité.
 - Les scores sont dans la collection `users`, modifiable uniquement par l’administrateur.
 
@@ -114,7 +117,10 @@ service cloud.firestore {
         && request.resource.data.title.size() > 2 && request.resource.data.title.size() < 140
         && request.resource.data.startsAt is timestamp;
       allow create: if isAdmin();
-      allow update, delete: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin()
+        || (request.auth != null && resource.data.submittedBy == request.auth.uid
+            && resource.data.status in ['pending', 'rejected']);
     }
 
     // Scores de fiabilité : jamais visibles par les utilisateurs.

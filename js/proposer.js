@@ -1,5 +1,5 @@
 import { db, configured, onUser, login, logout, esc } from './firebase.js';
-import { collection, addDoc, getDocs, query, where, limit, serverTimestamp, Timestamp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+import { collection, addDoc, getDocs, doc, deleteDoc, query, where, limit, serverTimestamp, Timestamp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import { COUNTRIES, ZONES, defaultZone } from './regions.js';
 
 const $ = id => document.getElementById(id);
@@ -17,6 +17,13 @@ if (!configured) {
   };
   $('out').onclick = logout;
   $('f').onsubmit = submit;
+  // Suppression d’une proposition en attente ou refusée (les règles Firestore interdisent le reste).
+  $('mine').onclick = async e => {
+    const b = e.target.closest('[data-del]');
+    if (!b || !confirm('Supprimer cette proposition ?')) return;
+    try { await deleteDoc(doc(db, 'events', b.dataset.del)); } catch (err) { console.error(err); }
+    loadMine();
+  };
   onUser(u => {
     user = u; $('login').hidden = !!u; $('app').hidden = !u; $('who').hidden = !u;
     if (u) { $('name').textContent = u.displayName || u.email; loadMine(); checkAdmin(); presetZone(); }
@@ -75,8 +82,8 @@ async function loadMine() {
   try {
     const s = await getDocs(query(collection(db, 'events'), where('submittedBy', '==', user.uid)));
     const L = { pending: 'En attente', published: 'Publié', rejected: 'Refusé' };
-    const rows = s.docs.map(x => x.data()).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-    $('mine').innerHTML = rows.length ? rows.map(e => `<p class="mine"><span class="pill ${esc(e.status)}">${L[e.status] || esc(e.status)}</span> ${esc(e.title)} <span class="note">${e.startsAt.toDate().toLocaleDateString('fr-FR')}</span></p>`).join('')
+    const rows = s.docs.map(x => ({ id: x.id, ...x.data() })).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+    $('mine').innerHTML = rows.length ? rows.map(e => `<p class="mine"><span class="pill ${esc(e.status)}">${L[e.status] || esc(e.status)}</span> ${esc(e.title)} <span class="note">${e.startsAt.toDate().toLocaleDateString('fr-FR')}</span>${e.status === 'published' ? '' : ` <button class="chip" type="button" data-del="${e.id}">Supprimer</button>`}</p>`).join('')
       : '<p class="note">Aucune proposition pour l’instant.</p>';
   } catch (e) { console.error(e); }
 }

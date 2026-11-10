@@ -1,5 +1,5 @@
 import { db, configured, onUser, login, logout, esc } from './firebase.js';
-import { collection, getDocs, doc, query, where, orderBy, limit, writeBatch, serverTimestamp, Timestamp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+import { collection, getDocs, doc, query, where, orderBy, limit, writeBatch, deleteDoc, deleteField, serverTimestamp, Timestamp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import { COUNTRIES, ZONES } from './regions.js';
 
 // Fiabilité : un nouveau compte démarre à START, les points restent entre MIN et MAX, et SEUIL ou moins = « peu fiable ».
@@ -8,7 +8,7 @@ const TYPES = ['atelier', 'spectacle', 'nature', 'eveil', 'loisirs'];
 const $ = id => document.getElementById(id);
 const uid = () => crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
 const hm = d => d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }).replace(':', 'h');
-let tab = 'todo', pending = [], published = [], scores = {};
+let editing = null, tab = 'todo', pending = [], published = [], scores = {};
 
 if (!configured) {
   $('login').hidden = false; $('go').hidden = true;
@@ -20,9 +20,12 @@ if (!configured) {
     `<optgroup label="${o.n}">${ZONES.filter(z => z.c === c).map(z => `<option value="${z.id}">${z.n}</option>`).join('')}</optgroup>`).join('');
   $('date').min = new Date().toLocaleDateString('sv-SE');
   $('f').onsubmit = addEvents;
-  $('tabs').onclick = e => { const b = e.target.closest('[data-t]'); if (b) { tab = b.dataset.t; render(); } };
+  $('cancel').onclick = () => { tab = editing?.origin || 'add'; stopEdit(); render(); };
+  $('tabs').onclick = e => { const b = e.target.closest('[data-t]'); if (b) { if (editing) stopEdit(); tab = b.dataset.t; render(); } };
   $('list').onclick = e => {
     const s = e.target.closest('[data-series]'); if (s) return delSeries(s.dataset.series);
+    const ed = e.target.closest('[data-edit]'); if (ed) return startEdit(ed.dataset.edit);
+    const x = e.target.closest('[data-del]'); if (x) return delOne(x.dataset.del);
     const b = e.target.closest('[data-id]'); if (b) decide(b.dataset.id, b.dataset.to);
   };
   onUser(u => {
@@ -71,8 +74,8 @@ function card(e) {
   const meta = [e.type && esc(e.type), e.ageMin != null && e.ageMax != null && `${esc(e.ageMin)}–${esc(e.ageMax)} ans`, typeof e.price === 'number' && (e.price ? `${esc(e.price)} ${esc(e.currency || '€')}` : 'Gratuit'), rep].filter(Boolean).join(' · ');
   const link = /^https?:\/\//.test(e.sourceUrl || '') ? ` <a href="${esc(e.sourceUrl)}" target="_blank" rel="noopener noreferrer">Annonce</a>` : '';
   const act = tab === 'pub'
-    ? `<button class="btn ko" data-id="${e.id}" data-to="rejected" type="button">Dépublier</button>` + (e.seriesId ? `<button class="btn ko" data-series="${esc(e.seriesId)}" type="button">Supprimer la série</button>` : '')
-    : `<button class="btn ok" data-id="${e.id}" data-to="published" type="button">Valider</button><button class="btn ko" data-id="${e.id}" data-to="rejected" type="button">Refuser</button>`;
+    ? `<button class="btn" data-edit="${e.id}" type="button">Éditer</button><button class="btn ko" data-id="${e.id}" data-to="rejected" type="button">Dépublier</button><button class="btn ko" data-del="${e.id}" type="button">Supprimer</button>` + (e.seriesId ? `<button class="btn ko" data-series="${esc(e.seriesId)}" type="button">Supprimer la série</button>` : '')
+    : `<button class="btn" data-edit="${e.id}" type="button">Éditer</button><button class="btn ok" data-id="${e.id}" data-to="published" type="button">Valider</button><button class="btn ko" data-id="${e.id}" data-to="rejected" type="button">Refuser</button>`;
   return `<article class="card t-${k}"><div class="when"><span>${d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}<br>${hm(d)}${e.endsAt ? `<small>→ ${hm(e.endsAt.toDate())}</small>` : ''}</span></div><div class="body">
     <h3>${esc(e.title)}</h3><p class="place">${esc([e.place, e.address, e.city].filter(Boolean).join(', '))}${z ? ' (' + z.n + ')' : ''}</p>
     <p class="meta">${meta}${link}</p><p class="src">Proposé par : ${who}</p><div class="actions">${act}</div></div></article>`;
@@ -119,19 +122,14 @@ async function addEvents(ev) {
   if (!z || isNaN(base)) return msg('Vérifiez la date, l’heure et la zone.');
   let dur = 0;
   if (v.endTime) { dur = new Date(`${v.date}T${v.endTime}`) - base; if (!(dur > 0)) return msg('L’heure de fin doit être après le début.'); }
+  if (editing) return saveEdit(v, z, base, dur);
   const step = v.repeat === 'weekly' ? 7 : v.repeat === 'biweekly' ? 14 : 0;
   const until = step ? new Date(`${v.until}T23:59`) : base;
   if (isNaN(until) || until < base) return msg('Choisissez la date de fin de la répétition.');
   const dates = expand(base, step, until);
   if (dates.length > 100) return msg('100 dates maximum : raccourcissez la période.');
   const data = { title: v.title.trim(), country: z.c, regionId: z.id, city: v.city.trim(), status: 'published', createdAt: serverTimestamp() };
-  if (v.place.trim()) data.place = v.place.trim();
-  if (v.address.trim()) data.address = v.address.trim();
-  if (v.type) data.type = v.type;
-  ['ageMin', 'ageMax', 'price'].forEach(k => { if (v[k] !== '' && !isNaN(Number(v[k]))) data[k] = Number(v[k]); });
-  if (data.price !== undefined && z.c === 'CH') data.currency = 'CHF';
-  if (/^https?:\/\//.test(v.sourceUrl)) data.sourceUrl = v.sourceUrl;
-  if (v.sourceName.trim()) data.sourceName = v.sourceName.trim();
+  Object.entries(optional(v, z)).forEach(([k, x]) => { if (x !== undefined) data[k] = x; });
   if (step) data.seriesId = uid();
   $('send').disabled = true;
   try {
@@ -155,4 +153,60 @@ async function delSeries(id) {
     }
     await refresh();
   } catch (err) { console.error(err); $('info').textContent = 'Suppression impossible.'; }
+}
+
+// Suppression définitive d’un événement publié (sans effet sur le score du proposant).
+async function delOne(id) {
+  if (!confirm('Supprimer définitivement cet événement ?')) return;
+  try { await deleteDoc(doc(db, 'events', id)); await refresh(); }
+  catch (err) { console.error(err); $('info').textContent = 'Suppression impossible.'; }
+}
+
+// Champs facultatifs communs à l’ajout et à l’édition (undefined = vide).
+function optional(v, z) {
+  const n = k => v[k] !== '' && !isNaN(Number(v[k])) ? Number(v[k]) : undefined, price = n('price');
+  return {
+    place: v.place.trim() || undefined, address: v.address.trim() || undefined, type: v.type || undefined,
+    ageMin: n('ageMin'), ageMax: n('ageMax'), price, currency: price !== undefined && z.c === 'CH' ? 'CHF' : undefined,
+    sourceUrl: /^https?:\/\//.test(v.sourceUrl) ? v.sourceUrl : undefined, sourceName: v.sourceName.trim() || undefined
+  };
+}
+
+// Édition : le formulaire « Ajouter » est pré-rempli ; l’enregistrement modifie la fiche (et, si coché, les autres dates de la série).
+function startEdit(id) {
+  const e = [...pending, ...published].find(x => x.id === id); if (!e) return;
+  editing = { ...e, origin: tab }; tab = 'add'; render();
+  const f = $('f').elements, d = e.startsAt.toDate(), t = x => x.toTimeString().slice(0, 5);
+  Object.entries({
+    title: e.title, date: d.toLocaleDateString('sv-SE'), time: t(d), endTime: e.endsAt ? t(e.endsAt.toDate()) : '', city: e.city,
+    place: e.place || '', address: e.address || '', type: e.type || '', zone: e.regionId, ageMin: e.ageMin ?? '', ageMax: e.ageMax ?? '',
+    price: e.price ?? '', sourceUrl: e.sourceUrl || '', sourceName: e.sourceName || ''
+  }).forEach(([k, x]) => { f[k].value = x; });
+  f.repeat.value = ''; f.until.value = ''; $('series').checked = false;
+  setMode(true); window.scrollTo({ top: 0, behavior: 'smooth' });
+}
+function setMode(on) {
+  const f = $('f').elements;
+  f.repeat.disabled = f.until.disabled = on;
+  $('send').textContent = on ? 'Enregistrer les modifications' : 'Publier';
+  $('cancel').hidden = !on; $('serieswrap').hidden = !(on && editing?.seriesId);
+  $('date').min = on ? '' : new Date().toLocaleDateString('sv-SE');
+  $('msg').textContent = '';
+}
+function stopEdit() { editing = null; $('f').reset(); setMode(false); }
+
+async function saveEdit(v, z, base, dur) {
+  const e = editing, apply = o => Object.fromEntries(Object.entries(o).map(([k, x]) => [k, x === undefined ? deleteField() : x]));
+  const shared = { title: v.title.trim(), country: z.c, regionId: z.id, city: v.city.trim(), ...apply(optional(v, z)), editedAt: serverTimestamp() };
+  $('send').disabled = true;
+  try {
+    const b = writeBatch(db);
+    b.update(doc(db, 'events', e.id), { ...shared, startsAt: Timestamp.fromDate(base), endsAt: dur ? Timestamp.fromDate(new Date(base.getTime() + dur)) : deleteField() });
+    if (e.seriesId && $('series').checked) {
+      const snap = await getDocs(query(collection(db, 'events'), where('seriesId', '==', e.seriesId)));
+      snap.docs.filter(d => d.id !== e.id).forEach(d => b.update(d.ref, shared));
+    }
+    await b.commit(); tab = e.origin; stopEdit(); await refresh();
+  } catch (err) { console.error(err); $('msg').textContent = 'Enregistrement impossible.'; }
+  $('send').disabled = false;
 }

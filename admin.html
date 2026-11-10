@@ -51,7 +51,8 @@
         <label class="full">Répéter jusqu’au (si fréquence)<input type="date" name="until"></label>
         <label class="full">Lien de l’annonce<input type="url" name="sourceUrl" placeholder="https://…"></label>
         <label class="full">Où avez-vous trouvé l’info ?<input name="sourceName"></label>
-        <div class="full"><button class="btn ok" id="send" type="submit">Publier</button><p class="note" id="msg" aria-live="polite"></p></div>
+        <label class="full check" id="serieswrap" hidden><input type="checkbox" id="series"> Appliquer aussi aux autres dates de la série (titre, lieu, adresse, type, âges, prix, source ; les dates et heures ne changent pas)</label>
+        <div class="full"><button class="btn ok" id="send" type="submit">Publier</button> <button class="chip" id="cancel" type="button" hidden>Annuler</button><p class="note" id="msg" aria-live="polite"></p></div>
       </form>
       <div id="list"></div>
     </section>
