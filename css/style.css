@@ -143,3 +143,11 @@ a.chip{text-decoration:none}
 /* ---- Case à cocher du formulaire ---- */
 .form label.check{display:flex;gap:10px;align-items:center;font-weight:600}
 .form label.check input{width:auto;min-height:0}
+
+/* Mobile : le sélecteur de zone garde sa hauteur normale */
+@media (max-width: 520px) {
+  .where select {
+    flex: none;
+    width: 100%;
+  }
+}
