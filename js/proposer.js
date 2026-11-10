@@ -1,9 +1,9 @@
 import { db, configured, onUser, login, logout, esc } from './firebase.js';
-import { collection, addDoc, getDocs, doc, deleteDoc, query, where, limit, serverTimestamp, Timestamp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+import { collection, addDoc, getDocs, doc, deleteDoc, updateDoc, deleteField, query, where, limit, serverTimestamp, Timestamp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import { COUNTRIES, ZONES, defaultZone } from './regions.js';
 
 const $ = id => document.getElementById(id);
-let user = null;
+let user = null, editing = null, myEvents = [];
 
 if (!configured) {
   $('login').hidden = false; $('go').hidden = true;
@@ -17,13 +17,17 @@ if (!configured) {
   };
   $('out').onclick = logout;
   $('f').onsubmit = submit;
-  // Suppression d’une proposition en attente ou refusée (les règles Firestore interdisent le reste).
+  // Modifier (propositions en attente) et supprimer (tous états) : les règles Firestore appliquent les mêmes limites.
   $('mine').onclick = async e => {
-    const b = e.target.closest('[data-del]');
-    if (!b || !confirm('Supprimer cette proposition ?')) return;
-    try { await deleteDoc(doc(db, 'events', b.dataset.del)); } catch (err) { console.error(err); }
+    const ed = e.target.closest('[data-edit]');
+    if (ed) return startEdit(ed.dataset.edit);
+    const b = e.target.closest('[data-del]'); if (!b) return;
+    const ev = myEvents.find(x => x.id === b.dataset.del);
+    if (!confirm(ev?.status === 'published' ? 'Cet événement est publié : le supprimer le retire du site. Continuer ?' : 'Supprimer cette proposition ?')) return;
+    try { await deleteDoc(doc(db, 'events', b.dataset.del)); if (editing?.id === b.dataset.del) stopEdit(); } catch (err) { console.error(err); }
     loadMine();
   };
+  $('cancel').onclick = stopEdit;
   onUser(u => {
     user = u; $('login').hidden = !!u; $('app').hidden = !u; $('who').hidden = !u;
     if (u) { $('name').textContent = u.displayName || u.email; loadMine(); checkAdmin(); presetZone(); }
@@ -48,42 +52,67 @@ async function submit(e) {
   const v = Object.fromEntries(new FormData($('f')));
   const z = ZONES.find(z => z.id === v.zone), start = new Date(`${v.date}T${v.time}`);
   if (!z || isNaN(start)) return msg('Vérifiez la date, l’heure et la zone.');
-  const data = {
-    title: v.title.trim(), startsAt: Timestamp.fromDate(start), country: z.c, regionId: z.id, city: v.city.trim(),
-    status: 'pending', submittedBy: user.uid, submitterName: user.displayName || '', createdAt: serverTimestamp()
+  const n = k => v[k] !== '' && !isNaN(Number(v[k])) ? Number(v[k]) : undefined, price = n('price');
+  // Champs facultatifs : undefined = vide (retiré de la fiche en cas de modification).
+  const opt = {
+    place: v.place.trim() || undefined, address: v.address.trim() || undefined, type: v.type || undefined,
+    ageMin: n('ageMin'), ageMax: n('ageMax'), price, currency: price !== undefined && z.c === 'CH' ? 'CHF' : undefined,
+    sourceUrl: /^https?:\/\//.test(v.sourceUrl) ? v.sourceUrl : undefined, sourceName: v.sourceName.trim() || undefined,
+    endsAt: undefined, repeat: undefined, until: undefined
   };
   if (v.endTime) {
     const end = new Date(`${v.date}T${v.endTime}`);
     if (!(end > start)) return msg('L’heure de fin doit être après l’heure de début.');
-    data.endsAt = Timestamp.fromDate(end);
+    opt.endsAt = Timestamp.fromDate(end);
   }
   if (v.repeat) {
     const until = new Date(`${v.until}T23:59`);
     if (isNaN(until) || until < start) return msg('Choisissez la date de fin de la répétition.');
     if (until - start > 366 * 864e5) return msg('La répétition ne peut pas dépasser un an.');
-    data.repeat = v.repeat; data.until = Timestamp.fromDate(until);
+    opt.repeat = v.repeat; opt.until = Timestamp.fromDate(until);
   }
-  if (v.place.trim()) data.place = v.place.trim();
-  if (v.address.trim()) data.address = v.address.trim();
-  if (v.type) data.type = v.type;
-  ['ageMin', 'ageMax', 'price'].forEach(k => { if (v[k] !== '' && !isNaN(Number(v[k]))) data[k] = Number(v[k]); });
-  if (data.price !== undefined && z.c === 'CH') data.currency = 'CHF';
-  if (/^https?:\/\//.test(v.sourceUrl)) data.sourceUrl = v.sourceUrl;
-  if (v.sourceName.trim()) data.sourceName = v.sourceName.trim();
+  const core = { title: v.title.trim(), startsAt: Timestamp.fromDate(start), country: z.c, regionId: z.id, city: v.city.trim() };
   $('send').disabled = true;
   try {
-    await addDoc(collection(db, 'events'), data);
-    $('f').reset(); msg('Merci ! Votre proposition est en attente de relecture.'); loadMine(); presetZone();
+    if (editing) {
+      const upd = Object.fromEntries(Object.entries(opt).map(([k, x]) => [k, x === undefined ? deleteField() : x]));
+      await updateDoc(doc(db, 'events', editing.id), { ...core, ...upd });
+      stopEdit(); msg('Modifications enregistrées.');
+    } else {
+      const set = Object.fromEntries(Object.entries(opt).filter(([, x]) => x !== undefined));
+      await addDoc(collection(db, 'events'), { ...core, ...set, status: 'pending', submittedBy: user.uid, submitterName: user.displayName || '', createdAt: serverTimestamp() });
+      $('f').reset(); msg('Merci ! Votre proposition est en attente de relecture.'); presetZone();
+    }
+    loadMine();
   } catch (err) { console.error(err); msg('Envoi impossible. Vérifiez les champs et réessayez.'); }
   $('send').disabled = false;
 }
+
+function startEdit(id) {
+  const e = myEvents.find(x => x.id === id); if (!e || e.status !== 'pending') return;
+  editing = e;
+  const f = $('f').elements, d = e.startsAt.toDate(), t = x => x.toTimeString().slice(0, 5);
+  Object.entries({
+    title: e.title, date: d.toLocaleDateString('sv-SE'), time: t(d), endTime: e.endsAt ? t(e.endsAt.toDate()) : '', city: e.city,
+    place: e.place || '', address: e.address || '', type: e.type || '', zone: e.regionId, ageMin: e.ageMin ?? '', ageMax: e.ageMax ?? '',
+    price: e.price ?? '', sourceUrl: e.sourceUrl || '', sourceName: e.sourceName || '',
+    repeat: e.repeat && e.repeat !== 'none' ? e.repeat : '', until: e.until ? e.until.toDate().toLocaleDateString('sv-SE') : ''
+  }).forEach(([k, x]) => { f[k].value = x; });
+  setMode(true); $('f').scrollIntoView({ behavior: 'smooth' });
+}
+function setMode(on) {
+  $('send').textContent = on ? 'Enregistrer les modifications' : 'Envoyer ma proposition';
+  $('cancel').hidden = !on; $('date').min = on ? '' : new Date().toLocaleDateString('sv-SE');
+}
+function stopEdit() { editing = null; $('f').reset(); setMode(false); presetZone(); }
 
 async function loadMine() {
   try {
     const s = await getDocs(query(collection(db, 'events'), where('submittedBy', '==', user.uid)));
     const L = { pending: 'En attente', published: 'Publié', rejected: 'Refusé' };
-    const rows = s.docs.map(x => ({ id: x.id, ...x.data() })).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
-    $('mine').innerHTML = rows.length ? rows.map(e => `<p class="mine"><span class="pill ${esc(e.status)}">${L[e.status] || esc(e.status)}</span> ${esc(e.title)} <span class="note">${e.startsAt.toDate().toLocaleDateString('fr-FR')}</span>${e.status === 'published' ? '' : ` <button class="chip" type="button" data-del="${e.id}">Supprimer</button>`}</p>`).join('')
+    myEvents = s.docs.map(x => ({ id: x.id, ...x.data() })).sort((a, b) => (b.createdAt?.seconds || 0) - (a.createdAt?.seconds || 0));
+    $('mine').innerHTML = myEvents.length ? myEvents.map(e => `<p class="mine"><span class="pill ${esc(e.status)}">${L[e.status] || esc(e.status)}</span> ${esc(e.title)} <span class="note">${e.startsAt.toDate().toLocaleDateString('fr-FR')}</span>` +
+      `${e.status === 'pending' ? ` <button class="chip" type="button" data-edit="${e.id}">Modifier</button>` : ''} <button class="chip" type="button" data-del="${e.id}">Supprimer</button></p>`).join('')
       : '<p class="note">Aucune proposition pour l’instant.</p>';
   } catch (e) { console.error(e); }
 }

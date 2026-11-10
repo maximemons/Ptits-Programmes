@@ -30,7 +30,7 @@ Zones disponibles :
 - Le visiteur se connecte avec Google, ou est directement reconnu s’il s’est déjà connecté sur cet appareil.
 - Le formulaire crée un événement avec `status: "pending"` : il reste invisible tant qu’il n’est pas validé.
 - La page affiche les propositions du compte avec leur état (en attente, publié, refusé) et propose par défaut sa zone (celle mémorisée sur la page d’accueil, sinon sa position). Le score de fiabilité n’est jamais visible par le proposant.
-- Chaque proposition en attente ou refusée a un bouton « Supprimer ». Une proposition déjà publiée ne peut être retirée que par l’administrateur.
+- Chaque proposition a un bouton « Supprimer », quel que soit son état (supprimer une proposition publiée la retire du site). Les propositions encore en attente ont aussi un bouton « Modifier » ; une fois publiées, seule l’administration peut les modifier.
 - On peut indiquer une heure de début et de fin, et une fréquence (toutes les semaines ou toutes les 2 semaines jusqu’à une date, un an maximum). Une proposition récurrente reste une seule fiche en attente : toutes les dates sont créées quand elle est validée.
 - L’administrateur voit un bouton « Page admin » ; il est détecté par la lecture de la collection `users`, réservée à l’administrateur.
 
@@ -100,27 +100,37 @@ service cloud.firestore {
         && request.auth.token.email_verified == true;
     }
 
+    // Contenu autorisé pour une proposition de visiteur (création ou modification).
+    function validProposal() {
+      let d = request.resource.data;
+      return d.keys().hasAll(['title', 'startsAt', 'country', 'regionId', 'city'])
+        && d.keys().hasOnly(['title', 'startsAt', 'endsAt', 'country', 'regionId', 'city', 'place', 'address',
+            'ageMin', 'ageMax', 'type', 'price', 'currency', 'sourceName', 'sourceUrl',
+            'repeat', 'until', 'status', 'submittedBy', 'submitterName', 'createdAt'])
+        && d.get('repeat', 'none') in ['none', 'weekly', 'biweekly']
+        && d.title is string && d.title.size() > 2 && d.title.size() < 140
+        && d.startsAt is timestamp
+        && d.status == 'pending'
+        && d.submittedBy == request.auth.uid;
+    }
+
     match /events/{id} {
       allow read: if resource.data.status == 'published'
         || isAdmin()
         || (request.auth != null && resource.data.submittedBy == request.auth.uid);
-      allow create: if request.auth != null
-        && request.resource.data.status == 'pending'
-        && request.resource.data.submittedBy == request.auth.uid
-        && request.resource.data.createdAt == request.time
-        && request.resource.data.keys().hasAll(['title', 'startsAt', 'country', 'regionId', 'city'])
-        && request.resource.data.keys().hasOnly(['title', 'startsAt', 'endsAt', 'country', 'regionId', 'city', 'place', 'address',
-            'ageMin', 'ageMax', 'type', 'price', 'currency', 'sourceName', 'sourceUrl',
-            'repeat', 'until', 'status', 'submittedBy', 'submitterName', 'createdAt'])
-        && request.resource.data.get('repeat', 'none') in ['none', 'weekly', 'biweekly']
-        && request.resource.data.title is string
-        && request.resource.data.title.size() > 2 && request.resource.data.title.size() < 140
-        && request.resource.data.startsAt is timestamp;
-      allow create: if isAdmin();
-      allow update: if isAdmin();
-      allow delete: if isAdmin()
+
+      allow create: if isAdmin()
+        || (request.auth != null && validProposal() && request.resource.data.createdAt == request.time);
+
+      // Un visiteur ne modifie que ses propositions encore en attente.
+      allow update: if isAdmin()
         || (request.auth != null && resource.data.submittedBy == request.auth.uid
-            && resource.data.status in ['pending', 'rejected']);
+            && resource.data.status == 'pending' && validProposal()
+            && request.resource.data.createdAt == resource.data.createdAt);
+
+      // Un visiteur peut supprimer ses propositions, quel que soit leur état.
+      allow delete: if isAdmin()
+        || (request.auth != null && resource.data.submittedBy == request.auth.uid);
     }
 
     // Scores de fiabilité : jamais visibles par les utilisateurs.
