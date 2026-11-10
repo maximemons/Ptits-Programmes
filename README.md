@@ -80,7 +80,7 @@ js/firebase-config.js   configuration du projet Firebase
 js/firebase.js          initialisation partagée (Firestore, connexion Google)
 js/maps.js              lien d’itinéraire (GPS ou Google Maps)
 scripts/purge.mjs        purge des événements passés (lancé par la CI)
-.gitlab-ci.yml          pipeline planifié de purge
+.github/workflows/purge.yml   purge quotidienne (GitHub Actions)
 js/proposer.js          formulaire et suivi des propositions
 js/admin.js             file de validation et score de fiabilité
 ```
@@ -185,13 +185,14 @@ Ajouter une entrée dans `COUNTRIES` et dans `RAW` (`js/regions.js`) : chaque zo
 
 ## Purge des événements passés
 
-Un pipeline GitLab planifié supprime les événements commencés depuis plus de 7 jours (propositions en attente ou refusées comprises). Le site n’affiche de toute façon que les dates à venir : la purge sert à garder une base légère.
+Un workflow GitHub Actions (`.github/workflows/purge.yml`) supprime chaque jour à 2 h 07 (heure de Paris) les événements commencés depuis plus de 7 jours, propositions en attente ou refusées comprises. Le site n’affiche de toute façon que les dates à venir : la purge sert à garder une base légère.
 
 1. Créer une clé de compte de service (console Firebase > Paramètres du projet > Comptes de service). De préférence un compte dédié avec le seul rôle « Cloud Datastore User ». Ne jamais commiter la clé.
-2. GitLab > Paramètres > CI/CD > Variables : ajouter `GOOGLE_APPLICATION_CREDENTIALS`, type **File**, avec le contenu du JSON, et cocher « Protected ».
-3. Tester d’abord sans rien supprimer : ajouter `DRY_RUN` = `true`, puis CI/CD > Pipelines > **Run pipeline** (branche `main`). Le journal du job indique combien d’événements seraient supprimés.
-4. Retirer `DRY_RUN`, puis CI/CD > **Schedules** > nouvelle planification, par exemple `0 4 * * 0` (chaque dimanche à 4 h), branche `main`.
-5. Pour changer la durée de conservation, ajouter la variable `RETENTION_DAYS` (7 par défaut).
+2. GitHub > Settings > Secrets and variables > Actions > **New repository secret** : nom `FIREBASE_SERVICE_ACCOUNT`, valeur = tout le contenu du fichier JSON.
+3. Tester sans rien supprimer : onglet **Actions** > « Purge des événements passés » > **Run workflow**, cocher « Simulation ». Le journal indique combien d’événements seraient supprimés.
+4. Relancer sans la case pour une purge réelle. Ensuite, le workflow tourne tout seul chaque nuit (uniquement depuis la branche par défaut).
+
+Le champ « jours de conservation » du lancement manuel remplace les 7 jours par défaut. GitHub peut retarder ou, aux heures chargées, sauter un déclenchement planifié : la purge étant rattrapée la nuit suivante, ce n’est pas gênant. Sur un dépôt public sans aucune activité pendant 60 jours, GitHub désactive les workflows planifiés : il faut alors les réactiver dans l’onglet Actions.
 
 ## Géolocalisation : à savoir
 

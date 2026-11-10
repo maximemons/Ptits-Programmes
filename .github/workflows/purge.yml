@@ -1,0 +1,35 @@
+# Purge des événements passés : tous les jours à 2 h 07 (heure de Paris), ou à la main (onglet Actions > Run workflow).
+# Secret requis : FIREBASE_SERVICE_ACCOUNT (contenu complet du JSON de la clé de compte de service).
+name: Purge des événements passés
+
+on:
+  schedule:
+    - cron: '7 2 * * *'        # tous les jours à 2h07
+      timezone: 'Europe/Paris'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Simulation : compte les événements sans rien supprimer'
+        type: boolean
+        default: false
+      retention_days:
+        description: 'Nombre de jours de conservation après le début de l’événement'
+        default: '7'
+
+jobs:
+  purge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install --no-save firebase-admin
+      - name: Purge
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          RETENTION_DAYS: ${{ inputs.retention_days || '7' }}
+        run: |
+          printf '%s' "$FIREBASE_SERVICE_ACCOUNT" > "$RUNNER_TEMP/key.json"
+          GOOGLE_APPLICATION_CREDENTIALS="$RUNNER_TEMP/key.json" node scripts/purge.mjs
