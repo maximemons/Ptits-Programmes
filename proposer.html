@@ -17,7 +17,7 @@
 <div class="wrap">
   <header class="top">
     <a class="brand" href="./">Les P’tits Programmes</a>
-    <div id="who" hidden><span id="name"></span> <button class="chip" id="out" type="button">Se déconnecter</button></div>
+    <div id="who" hidden><span id="name"></span> <a class="chip" id="adm" href="admin.html" hidden>Page admin</a> <button class="chip" id="out" type="button">Se déconnecter</button></div>
   </header>
   <main>
     <section class="hero">
@@ -33,19 +33,22 @@
       <form id="f" class="panel form">
         <label class="full">Titre *<input name="title" required minlength="3" maxlength="139"></label>
         <label>Date *<input type="date" name="date" id="date" required></label>
-        <label>Heure *<input type="time" name="time" required></label>
+        <label>Début *<input type="time" name="time" required></label>
+        <label>Fin<input type="time" name="endTime"></label>
         <label>Ville *<input name="city" required></label>
         <label>Lieu<input name="place" placeholder="Médiathèque, salle des fêtes…"></label>
+        <label>Type<select name="type"><option value="">—</option><option value="atelier">Atelier</option><option value="spectacle">Spectacle</option><option value="nature">Sortie nature</option><option value="eveil">Éveil et contes</option><option value="loisirs">Loisirs</option></select></label>
+        <label class="full">Adresse<input name="address" placeholder="12 rue des Lilas" autocomplete="street-address"></label>
         <label class="full">Zone *<select name="zone" id="zone" required></select></label>
         <label>Âge min<input type="number" name="ageMin" min="0" max="17" inputmode="numeric"></label>
         <label>Âge max<input type="number" name="ageMax" min="0" max="17" inputmode="numeric"></label>
-        <label>Type<select name="type"><option value="">—</option><option value="atelier">Atelier</option><option value="spectacle">Spectacle</option><option value="nature">Sortie nature</option><option value="eveil">Éveil et contes</option><option value="loisirs">Loisirs</option></select></label>
         <label>Prix (0 = gratuit)<input type="number" name="price" min="0" step="0.5" inputmode="decimal"></label>
+        <label>Fréquence<select name="repeat"><option value="">Une seule fois</option><option value="weekly">Toutes les semaines (même jour)</option><option value="biweekly">Toutes les 2 semaines</option></select></label>
+        <label class="full">Répéter jusqu’au (si fréquence)<input type="date" name="until"></label>
         <label class="full">Lien de l’annonce<input type="url" name="sourceUrl" placeholder="https://…"></label>
-        <label class="full">Où avez-vous trouvé l’info ?<input name="sourceName" placeholder="Page Facebook de la mairie…"></label>
+        <label class="full">Où avez-vous trouvé l’info ?<input name="sourceName"></label>
         <div class="full"><button class="btn" id="send" type="submit">Envoyer ma proposition</button><p class="note" id="msg" aria-live="polite"></p></div>
       </form>
-      <p class="note" id="score"></p>
       <h2 class="day">Mes propositions</h2>
       <div id="mine"></div>
     </section>

@@ -17,7 +17,7 @@
 <div class="wrap">
   <header class="top">
     <a class="brand" href="./">Les P’tits Programmes</a>
-    <div id="who" hidden><span id="name"></span> <button class="chip" id="out" type="button">Se déconnecter</button></div>
+    <div id="who" hidden><span id="name"></span> <a class="chip" href="proposer.html">Proposer</a> <button class="chip" id="out" type="button">Se déconnecter</button></div>
   </header>
   <main>
     <section class="hero"><h1>Administration</h1></section>
@@ -29,26 +29,28 @@
     <section id="app" hidden>
       <div class="tabs" id="tabs">
         <button class="chip" type="button" data-t="todo" aria-pressed="true">À valider</button>
-        <button class="chip" type="button" data-t="low" aria-pressed="false">Peu fiables</button>
+        <button class="chip" type="button" data-t="low" aria-pressed="false">Pas fiables</button>
         <button class="chip" type="button" data-t="pub" aria-pressed="false">Publiés</button>
         <button class="chip" type="button" data-t="add" aria-pressed="false">Ajouter</button>
       </div>
       <p class="note" id="info"></p>
       <form id="f" class="panel form" hidden>
         <label class="full">Titre *<input name="title" required minlength="3" maxlength="139"></label>
-        <label>Date (1re occurrence) *<input type="date" name="date" id="date" required></label>
-        <label>Heure *<input type="time" name="time" required></label>
+        <label>Date *<input type="date" name="date" id="date" required></label>
+        <label>Début *<input type="time" name="time" required></label>
+        <label>Fin<input type="time" name="endTime"></label>
         <label>Ville *<input name="city" required></label>
-        <label>Lieu<input name="place"></label>
+        <label>Lieu<input name="place" placeholder="Médiathèque, salle des fêtes…"></label>
+        <label>Type<select name="type"><option value="">—</option><option value="atelier">Atelier</option><option value="spectacle">Spectacle</option><option value="nature">Sortie nature</option><option value="eveil">Éveil et contes</option><option value="loisirs">Loisirs</option></select></label>
+        <label class="full">Adresse<input name="address" placeholder="12 rue des Lilas" autocomplete="street-address"></label>
         <label class="full">Zone *<select name="zone" id="zone" required></select></label>
         <label>Âge min<input type="number" name="ageMin" min="0" max="17" inputmode="numeric"></label>
         <label>Âge max<input type="number" name="ageMax" min="0" max="17" inputmode="numeric"></label>
-        <label>Type<select name="type"><option value="">—</option><option value="atelier">Atelier</option><option value="spectacle">Spectacle</option><option value="nature">Sortie nature</option><option value="eveil">Éveil et contes</option><option value="loisirs">Loisirs</option></select></label>
         <label>Prix (0 = gratuit)<input type="number" name="price" min="0" step="0.5" inputmode="decimal"></label>
+        <label>Fréquence<select name="repeat"><option value="">Une seule fois</option><option value="weekly">Toutes les semaines (même jour)</option><option value="biweekly">Toutes les 2 semaines</option></select></label>
+        <label class="full">Répéter jusqu’au (si fréquence)<input type="date" name="until"></label>
         <label class="full">Lien de l’annonce<input type="url" name="sourceUrl" placeholder="https://…"></label>
-        <label class="full">Source<input name="sourceName"></label>
-        <label>Répétition<select name="repeat"><option value="">Une seule fois</option><option value="weekly">Toutes les semaines (même jour)</option><option value="biweekly">Toutes les 2 semaines</option></select></label>
-        <label>Jusqu’au (si répété)<input type="date" name="until"></label>
+        <label class="full">Où avez-vous trouvé l’info ?<input name="sourceName"></label>
         <div class="full"><button class="btn ok" id="send" type="submit">Publier</button><p class="note" id="msg" aria-live="polite"></p></div>
       </form>
       <div id="list"></div>

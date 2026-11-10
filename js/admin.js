@@ -1,11 +1,13 @@
 import { db, configured, onUser, login, logout, esc } from './firebase.js';
-import { collection, getDocs, doc, query, where, orderBy, limit, writeBatch, increment, serverTimestamp, Timestamp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
+import { collection, getDocs, doc, query, where, orderBy, limit, writeBatch, serverTimestamp, Timestamp } from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import { COUNTRIES, ZONES } from './regions.js';
 
-// Barème de fiabilité : points gagnés si validé, perdus si refusé, et seuil sous lequel le compte passe dans « Peu fiables ».
-const POINTS_OK = 1, POINTS_KO = -2, SEUIL = -3;
+// Fiabilité : un nouveau compte démarre à START, les points restent entre MIN et MAX, et SEUIL ou moins = « peu fiable ».
+const START = 50, MAX = 200, MIN = -50, SEUIL = 0, POINTS_OK = 5, POINTS_KO = -15;
 const TYPES = ['atelier', 'spectacle', 'nature', 'eveil', 'loisirs'];
 const $ = id => document.getElementById(id);
+const uid = () => crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
+const hm = d => d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }).replace(':', 'h');
 let tab = 'todo', pending = [], published = [], scores = {};
 
 if (!configured) {
@@ -32,13 +34,13 @@ if (!configured) {
 async function refresh() {
   $('info').textContent = 'Chargement…';
   try {
-    const ev = collection(db, 'events');
+    const ev = collection(db, 'events'), today = new Date(new Date().setHours(0, 0, 0, 0));
     const [p, pub, us] = await Promise.all([
       getDocs(query(ev, where('status', '==', 'pending'))),
-      getDocs(query(ev, where('status', '==', 'published'), where('startsAt', '>=', Timestamp.fromDate(new Date(new Date().setHours(0, 0, 0, 0)))), orderBy('startsAt'), limit(100))),
+      getDocs(query(ev, where('status', '==', 'published'), where('startsAt', '>=', Timestamp.fromDate(today)), orderBy('startsAt'), limit(100))),
       getDocs(collection(db, 'users'))
     ]);
-    scores = Object.fromEntries(us.docs.map(d => [d.id, d.data().score || 0]));
+    scores = Object.fromEntries(us.docs.map(d => [d.id, d.data().score ?? START]));
     const map = d => ({ id: d.id, ...d.data() });
     pending = p.docs.map(map).sort((a, b) => (a.createdAt?.seconds || 0) - (b.createdAt?.seconds || 0));
     published = pub.docs.map(map);
@@ -49,72 +51,94 @@ async function refresh() {
   }
 }
 
-const low = e => e.submittedBy && (scores[e.submittedBy] || 0) <= SEUIL;
+const score = e => scores[e.submittedBy] ?? START;
+const low = e => e.submittedBy && score(e) <= SEUIL;
 
 function render() {
   const todo = pending.filter(e => !low(e)), bad = pending.filter(low);
-  const labels = { todo: `À valider (${todo.length})`, low: `Peu fiables (${bad.length})`, pub: 'Publiés', add: 'Ajouter' };
+  const labels = { todo: `À valider (${todo.length})`, low: `Pas fiables (${bad.length})`, pub: 'Publiés', add: 'Ajouter' };
   document.querySelectorAll('#tabs [data-t]').forEach(b => { b.textContent = labels[b.dataset.t]; b.setAttribute('aria-pressed', b.dataset.t === tab); });
   $('f').hidden = tab !== 'add'; $('info').hidden = $('list').hidden = tab === 'add';
   const list = tab === 'todo' ? todo : tab === 'low' ? bad : published;
-  $('info').textContent = `Barème : validé ${POINTS_OK > 0 ? '+' : ''}${POINTS_OK}, refusé ${POINTS_KO}. Peu fiable à partir de ${SEUIL} points.`;
+  $('info').textContent = `Nouveau compte : ${START} points (entre ${MIN} et ${MAX}). Validé +${POINTS_OK}, refusé ${POINTS_KO}. Pas fiable à ${SEUIL} ou moins.`;
   $('list').innerHTML = list.length ? list.map(card).join('') : '<p class="note">Rien à traiter ici.</p>';
 }
 
 function card(e) {
   const d = e.startsAt.toDate(), z = ZONES.find(z => z.id === e.regionId), k = TYPES.includes(e.type) ? e.type : 'loisirs';
-  const sc = scores[e.submittedBy] || 0;
-  const who = e.submittedBy ? `${esc(e.submitterName || 'Compte sans nom')} <span class="score${low(e) ? ' low' : ''}">${sc}</span>` : 'Ajout manuel';
-  const meta = [e.type && esc(e.type), e.ageMin != null && e.ageMax != null && `${esc(e.ageMin)}–${esc(e.ageMax)} ans`, typeof e.price === 'number' && (e.price ? `${esc(e.price)} ${esc(e.currency || '€')}` : 'Gratuit'), e.seriesId && 'récurrent'].filter(Boolean).join(' · ');
+  const who = e.submittedBy ? `${esc(e.submitterName || 'Compte sans nom')} <span class="score${low(e) ? ' low' : ''}">${score(e)}</span>` : 'Ajout manuel';
+  const rep = e.repeat && e.repeat !== 'none' && e.until ? `répété ${e.repeat === 'biweekly' ? 'toutes les 2 semaines' : 'chaque semaine'} jusqu’au ${e.until.toDate().toLocaleDateString('fr-FR')}` : e.seriesId && 'récurrent';
+  const meta = [e.type && esc(e.type), e.ageMin != null && e.ageMax != null && `${esc(e.ageMin)}–${esc(e.ageMax)} ans`, typeof e.price === 'number' && (e.price ? `${esc(e.price)} ${esc(e.currency || '€')}` : 'Gratuit'), rep].filter(Boolean).join(' · ');
   const link = /^https?:\/\//.test(e.sourceUrl || '') ? ` <a href="${esc(e.sourceUrl)}" target="_blank" rel="noopener noreferrer">Annonce</a>` : '';
   const act = tab === 'pub'
     ? `<button class="btn ko" data-id="${e.id}" data-to="rejected" type="button">Dépublier</button>` + (e.seriesId ? `<button class="btn ko" data-series="${esc(e.seriesId)}" type="button">Supprimer la série</button>` : '')
     : `<button class="btn ok" data-id="${e.id}" data-to="published" type="button">Valider</button><button class="btn ko" data-id="${e.id}" data-to="rejected" type="button">Refuser</button>`;
-  return `<article class="card t-${k}"><div class="when">${d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}<br>${d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }).replace(':', 'h')}</div><div class="body">
-    <h3>${esc(e.title)}</h3><p class="place">${esc([e.place, e.city].filter(Boolean).join(', '))}${z ? ' (' + z.n + ')' : ''}</p>
+  return `<article class="card t-${k}"><div class="when"><span>${d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit' })}<br>${hm(d)}${e.endsAt ? `<small>→ ${hm(e.endsAt.toDate())}</small>` : ''}</span></div><div class="body">
+    <h3>${esc(e.title)}</h3><p class="place">${esc([e.place, e.address, e.city].filter(Boolean).join(', '))}${z ? ' (' + z.n + ')' : ''}</p>
     <p class="meta">${meta}${link}</p><p class="src">Proposé par : ${who}</p><div class="actions">${act}</div></div></article>`;
+}
+
+// Dates d’une répétition : step = 0 (une fois), 7 ou 14 jours ; même heure locale à chaque date.
+function expand(base, step, until) {
+  const out = [];
+  for (let i = 0; i < 101; i++) {
+    const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + i * step, base.getHours(), base.getMinutes());
+    if (d > until) break;
+    out.push(d); if (!step) break;
+  }
+  return out;
 }
 
 async function decide(id, to) {
   const e = [...pending, ...published].find(x => x.id === id); if (!e) return;
   const delta = e.status === 'published' ? POINTS_KO - POINTS_OK : to === 'published' ? POINTS_OK : POINTS_KO;
-  const b = writeBatch(db);
-  b.update(doc(db, 'events', id), { status: to, reviewedAt: serverTimestamp() });
-  if (e.submittedBy) b.set(doc(db, 'users', e.submittedBy), { name: e.submitterName || '', score: increment(delta), updatedAt: serverTimestamp() }, { merge: true });
+  const b = writeBatch(db), upd = { status: to, reviewedAt: serverTimestamp() };
+  if (to === 'published' && e.repeat && e.repeat !== 'none' && e.until) {
+    // Une proposition répétée devient une série : la 1re date est celle proposée, les suivantes sont créées ici.
+    const start = e.startsAt.toDate(), dur = e.endsAt ? e.endsAt.toDate() - start : 0, sid = uid();
+    const { id: _id, repeat, until, reviewedAt, submittedBy, submitterName, ...base } = e;
+    upd.seriesId = sid;
+    expand(start, repeat === 'biweekly' ? 14 : 7, until.toDate()).slice(1, 101).forEach(d =>
+      b.set(doc(collection(db, 'events')), { ...base, status: 'published', seriesId: sid, createdAt: serverTimestamp(),
+        startsAt: Timestamp.fromDate(d), ...(dur ? { endsAt: Timestamp.fromDate(new Date(d.getTime() + dur)) } : {}) }));
+  }
+  b.update(doc(db, 'events', id), upd);
+  if (e.submittedBy) {
+    const next = Math.min(MAX, Math.max(MIN, score(e) + delta));
+    b.set(doc(db, 'users', e.submittedBy), { name: e.submitterName || '', score: next, updatedAt: serverTimestamp() }, { merge: true });
+  }
   try { await b.commit(); await refresh(); } catch (err) { console.error(err); $('info').textContent = 'Action impossible.'; }
 }
 
-// Ajout direct (publié sans validation), avec répétition : une fiche est créée par date, reliées par un seriesId.
+// Ajout direct (publié sans validation), éventuellement répété : une fiche par date, reliées par un seriesId.
 async function addEvents(ev) {
   ev.preventDefault();
   const msg = t => { $('msg').textContent = t; };
   const v = Object.fromEntries(new FormData($('f')));
   const z = ZONES.find(z => z.id === v.zone), base = new Date(`${v.date}T${v.time}`);
   if (!z || isNaN(base)) return msg('Vérifiez la date, l’heure et la zone.');
+  let dur = 0;
+  if (v.endTime) { dur = new Date(`${v.date}T${v.endTime}`) - base; if (!(dur > 0)) return msg('L’heure de fin doit être après le début.'); }
   const step = v.repeat === 'weekly' ? 7 : v.repeat === 'biweekly' ? 14 : 0;
   const until = step ? new Date(`${v.until}T23:59`) : base;
   if (isNaN(until) || until < base) return msg('Choisissez la date de fin de la répétition.');
-  const dates = [];
-  for (let i = 0; i < 101; i++) {
-    const d = new Date(base.getFullYear(), base.getMonth(), base.getDate() + i * step, base.getHours(), base.getMinutes());
-    if (d > until) break;
-    dates.push(d); if (!step) break;
-  }
+  const dates = expand(base, step, until);
   if (dates.length > 100) return msg('100 dates maximum : raccourcissez la période.');
   const data = { title: v.title.trim(), country: z.c, regionId: z.id, city: v.city.trim(), status: 'published', createdAt: serverTimestamp() };
   if (v.place.trim()) data.place = v.place.trim();
+  if (v.address.trim()) data.address = v.address.trim();
   if (v.type) data.type = v.type;
   ['ageMin', 'ageMax', 'price'].forEach(k => { if (v[k] !== '' && !isNaN(Number(v[k]))) data[k] = Number(v[k]); });
   if (data.price !== undefined && z.c === 'CH') data.currency = 'CHF';
   if (/^https?:\/\//.test(v.sourceUrl)) data.sourceUrl = v.sourceUrl;
   if (v.sourceName.trim()) data.sourceName = v.sourceName.trim();
-  if (step) data.seriesId = crypto.randomUUID ? crypto.randomUUID() : String(Date.now());
+  if (step) data.seriesId = uid();
   $('send').disabled = true;
   try {
     const col = collection(db, 'events');
     for (let i = 0; i < dates.length; i += 400) {
       const b = writeBatch(db);
-      dates.slice(i, i + 400).forEach(d => b.set(doc(col), { ...data, startsAt: Timestamp.fromDate(d) }));
+      dates.slice(i, i + 400).forEach(d => b.set(doc(col), { ...data, startsAt: Timestamp.fromDate(d), ...(dur ? { endsAt: Timestamp.fromDate(new Date(d.getTime() + dur)) } : {}) }));
       await b.commit();
     }
     $('f').reset(); msg(`${dates.length} événement${dates.length > 1 ? 's' : ''} publié${dates.length > 1 ? 's' : ''}.`); await refresh();

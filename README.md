@@ -29,14 +29,16 @@ Zones disponibles :
 - Le lien « Proposer un événement » ouvre `proposer.html` dans un nouvel onglet. Aucune connexion n’apparaît sur la page d’accueil.
 - Le visiteur se connecte avec Google, ou est directement reconnu s’il s’est déjà connecté sur cet appareil.
 - Le formulaire crée un événement avec `status: "pending"` : il reste invisible tant qu’il n’est pas validé.
-- La page affiche les propositions du compte avec leur état (en attente, publié, refusé) et son score de fiabilité.
+- La page affiche les propositions du compte avec leur état (en attente, publié, refusé) et propose par défaut sa zone (celle mémorisée sur la page d’accueil, sinon sa position). Le score de fiabilité n’est jamais visible par le proposant.
+- On peut indiquer une heure de début et de fin, et une fréquence (toutes les semaines ou toutes les 2 semaines jusqu’à une date, un an maximum). Une proposition récurrente reste une seule fiche en attente : toutes les dates sont créées quand elle est validée.
+- L’administrateur voit un bouton « Page admin » ; il est détecté par la lecture de la collection `users`, réservée à l’administrateur.
 
 ## Administration
 
 - `admin.html` est réservée au compte Google dont l’adresse figure dans les règles Firestore (`isAdmin`). Toute autre personne reçoit « Accès réservé ».
-- Trois onglets : **À valider**, **Peu fiables** et **Publiés** (pour dépublier).
-- **Valider** publie l’événement et ajoute des points au proposant ; **Refuser** en retire. Le barème se règle en haut de `js/admin.js` (`POINTS_OK`, `POINTS_KO`, `SEUIL`) : +1, −2, et « peu fiable » à partir de −3.
-- Un compte sous le seuil voit ses nouvelles propositions arriver dans l’onglet **Peu fiables**, pour ne pas encombrer la file principale.
+- Quatre onglets : **À valider**, **Pas fiables** et **Publiés** (pour dépublier).
+- **Valider** publie l’événement et ajoute des points au proposant ; **Refuser** en retire. Le barème se règle en haut de `js/admin.js` : un nouveau compte démarre à 50 points, validé +5, refusé −15, plafond 200, plancher −50, et « pas fiable » à 0 ou moins.
+- Un compte sous le seuil voit ses nouvelles propositions arriver dans l’onglet **Pas fiables**, pour ne pas encombrer la file principale.
 - L’onglet **Ajouter** publie directement un événement, sans validation ni score. Il peut se répéter toutes les semaines (par exemple tous les jeudis) ou toutes les 2 semaines jusqu’à une date de fin, 100 dates au maximum : une fiche est créée par date, reliées par un `seriesId`.
 - Dans **Publiés** (les 100 prochaines dates), « Supprimer la série » retire toutes les dates d’un événement répété.
 - Dépublier un événement déjà validé annule le gain et applique la pénalité.
@@ -49,7 +51,8 @@ Chaque carte affiche :
 - l’heure de début, sur un bandeau de la couleur du type d’événement ;
 - le titre, le lieu et la ville ;
 - le type, la tranche d’âge et le prix (ou « Gratuit ») ;
-- la provenance de l’information et un lien vers l’annonce d’origine.
+- la provenance de l’information et un lien vers l’annonce d’origine ;
+- un lien « Itinéraire » quand l’événement a une adresse : il ouvre Apple Plans sur iPhone, l’application GPS par défaut sur Android et Google Maps sur ordinateur (adresse + ville).
 
 L’âge, le prix et le lien sont facultatifs : un champ absent n’est tout simplement pas affiché.
 
@@ -72,6 +75,7 @@ js/app.js               affichage, filtres, géolocalisation, lecture Firestore
 js/regions.js           pays et zones (France, Belgique, Suisse)
 js/firebase-config.js   configuration du projet Firebase
 js/firebase.js          initialisation partagée (Firestore, connexion Google)
+js/maps.js              lien d’itinéraire (GPS ou Google Maps)
 js/proposer.js          formulaire et suivi des propositions
 js/admin.js             file de validation et score de fiabilité
 ```
@@ -102,19 +106,20 @@ service cloud.firestore {
         && request.resource.data.submittedBy == request.auth.uid
         && request.resource.data.createdAt == request.time
         && request.resource.data.keys().hasAll(['title', 'startsAt', 'country', 'regionId', 'city'])
-        && request.resource.data.keys().hasOnly(['title', 'startsAt', 'country', 'regionId', 'city', 'place',
+        && request.resource.data.keys().hasOnly(['title', 'startsAt', 'endsAt', 'country', 'regionId', 'city', 'place', 'address',
             'ageMin', 'ageMax', 'type', 'price', 'currency', 'sourceName', 'sourceUrl',
-            'status', 'submittedBy', 'submitterName', 'createdAt'])
+            'repeat', 'until', 'status', 'submittedBy', 'submitterName', 'createdAt'])
+        && request.resource.data.get('repeat', 'none') in ['none', 'weekly', 'biweekly']
         && request.resource.data.title is string
         && request.resource.data.title.size() > 2 && request.resource.data.title.size() < 140
         && request.resource.data.startsAt is timestamp;
-      allow update, delete: if isAdmin();
       allow create: if isAdmin();
+      allow update, delete: if isAdmin();
     }
 
+    // Scores de fiabilité : jamais visibles par les utilisateurs.
     match /users/{uid} {
-      allow read: if request.auth != null && (request.auth.uid == uid || isAdmin());
-      allow write: if isAdmin();
+      allow read, write: if isAdmin();
     }
   }
 }
@@ -137,9 +142,11 @@ Collection `events` :
 |---|---|---|
 | title | texte | Heure du conte |
 | place, city | texte | Médiathèque, Quimper |
+| address | texte, facultatif | 12 rue des Lilas |
 | country | `FR`, `BE` ou `CH` | FR |
 | regionId | texte (voir `js/regions.js`) | fr-bre |
-| startsAt | horodatage | 14 nov. 2026, 10:30 |
+| startsAt, endsAt | horodatage (endsAt facultatif) | 14 nov. 2026, 10:30 |
+| repeat, until | `weekly` ou `biweekly` et date de fin (propositions en attente) | weekly |
 | ageMin, ageMax | nombre | 3, 7 |
 | type | `atelier`, `spectacle`, `nature`, `eveil`, `loisirs` | eveil |
 | price | nombre (0 = gratuit) | 0 |
@@ -152,7 +159,7 @@ Collection `events` :
 
 Les identifiants de zone sont de la forme `<pays>-<code>` : `fr-bre` (Bretagne), `fr-hdf` (Hauts-de-France), `be-bru` (Bruxelles-Capitale), `ch-ge` (Genève).
 
-Collection `users/{uid}` : `name` et `score` de fiabilité, créée automatiquement à la première décision de l’administrateur.
+Collection `users/{uid}` (lecture et écriture réservées à l’administrateur) : `name` et `score` de fiabilité (50 par défaut), créée automatiquement à la première décision de l’administrateur.
 
 ## Ajouter un pays ou un niveau plus fin
 

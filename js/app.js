@@ -2,7 +2,8 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.14.1/fireba
 import { getFirestore, collection, query, where, orderBy, limit, getDocs, Timestamp }
   from 'https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore.js';
 import { firebaseConfig } from './firebase-config.js';
-import { COUNTRIES, ZONES } from './regions.js';
+import { COUNTRIES, ZONES, zoneFrom } from './regions.js';
+import { mapsUrl } from './maps.js';
 
 const TYPES = { atelier: 'Atelier', spectacle: 'Spectacle', nature: 'Sortie nature', eveil: 'Éveil et contes', loisirs: 'Loisirs' };
 const AGES = [['Tous', null], ['0–3 ans', [0, 3]], ['3–6 ans', [3, 6]], ['6–12 ans', [6, 12]]];
@@ -11,7 +12,6 @@ const S = { sel: '', day: null, age: null, free: false, type: null, events: [], 
 
 const $ = id => document.getElementById(id);
 const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const norm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z]/g, '');
 const key = d => d.toLocaleDateString('sv-SE');
 const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
 const store = {
@@ -60,26 +60,6 @@ function titleFor() {
   if (!S.sel) return base;
   if (S.sel.length === 2) return `${base} ${COUNTRIES[S.sel].de}`;
   return `${base} ${ZONES.find(z => z.id === S.sel).de}`;
-}
-
-async function zoneFrom(lat, lon) {
-  let cc = '', state = '';
-  try {
-    // Coordonnées arrondies (≈1 km) avant l’appel au service de géocodage inverse d’OpenStreetMap.
-    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=5&accept-language=fr&lat=${lat.toFixed(2)}&lon=${lon.toFixed(2)}`;
-    const j = await (await fetch(url)).json();
-    cc = (j.address?.country_code || '').toUpperCase();
-    state = j.address?.state || '';
-  } catch {}
-  if (['GP', 'MQ', 'GF', 'RE', 'YT'].includes(cc)) cc = 'FR';
-  const pool = ZONES.filter(z => !cc || z.c === cc);
-  if (!pool.length) return null;
-  const n = norm(state);
-  const byName = n && pool.find(z => n === norm(z.n) || n.includes(norm(z.n)));
-  if (byName) return byName;
-  const k = Math.cos(lat * Math.PI / 180);
-  return pool.reduce((best, z) =>
-    ((z.lat - lat) ** 2 + ((z.lng - lon) * k) ** 2) < ((best.lat - lat) ** 2 + ((best.lng - lon) * k) ** 2) ? z : best);
 }
 
 function locate() {
@@ -153,13 +133,16 @@ function render() {
     if (key(e.d) !== cur) { cur = key(e.d); out += `<h2 class="day">${cap(dayName(e.d))}</h2>`; }
     const k = TYPES[e.type] ? e.type : 'loisirs';
     const time = e.d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }).replace(':', 'h');
+    const end = e.endsAt ? `<small>→ ${e.endsAt.toDate().toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }).replace(':', 'h')}</small>` : '';
     const age = e.ageMin != null && e.ageMax != null ? `<span>${esc(e.ageMin)}–${esc(e.ageMax)} ans</span>` : '';
     const price = typeof e.price === 'number' ? `<span class="price${e.price ? '' : ' free'}">${e.price ? esc(e.price) + ' ' + esc(e.currency || '€') : 'Gratuit'}</span>` : '';
     const src = e.sourceName ? `Trouvé sur : ${esc(e.sourceName)}. ` : '';
     const link = /^https?:\/\//.test(e.sourceUrl || '') ? `<a href="${esc(e.sourceUrl)}" target="_blank" rel="noopener noreferrer">Voir l’annonce d’origine</a>` : '';
-    out += `<article class="card t-${k}"><div class="when">${time}</div><div class="body">
-      <h3>${esc(e.title)}</h3><p class="place">${esc([e.place, e.city].filter(Boolean).join(', '))}</p>
-      <p class="meta"><span class="tag">${TYPES[k]}</span>${age}${price}</p>
+    const m = e.address ? mapsUrl(e) : '';
+    const route = m ? `<a href="${esc(m)}"${m.startsWith('https://www.google') ? ' target="_blank" rel="noopener noreferrer"' : ''}>Itinéraire</a>` : '';
+    out += `<article class="card t-${k}"><div class="when"><span>${time}${end}</span></div><div class="body">
+      <h3>${esc(e.title)}</h3><p class="place">${esc([e.place, e.address, e.city].filter(Boolean).join(', '))}</p>
+      <p class="meta"><span class="tag">${TYPES[k]}</span>${age}${price}${route}</p>
       <p class="src">${src}${link}</p></div></article>`;
   });
   $('list').innerHTML = out;

@@ -75,3 +75,36 @@ const RAW = {
 
 export const ZONES = Object.entries(RAW).flatMap(([c, list]) =>
   list.map(([k, n, de, lat, lng]) => ({ id: `${c.toLowerCase()}-${k}`, c, n, de, lat, lng })));
+
+const norm = s => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z]/g, '');
+
+// Retrouve la zone à partir d’une position (coordonnées arrondies avant l’appel à Nominatim).
+export async function zoneFrom(lat, lon) {
+  let cc = '', state = '';
+  try {
+    // Coordonnées arrondies (≈1 km) avant l’appel au service de géocodage inverse d’OpenStreetMap.
+    const url = `https://nominatim.openstreetmap.org/reverse?format=jsonv2&zoom=5&accept-language=fr&lat=${lat.toFixed(2)}&lon=${lon.toFixed(2)}`;
+    const j = await (await fetch(url)).json();
+    cc = (j.address?.country_code || '').toUpperCase();
+    state = j.address?.state || '';
+  } catch {}
+  if (['GP', 'MQ', 'GF', 'RE', 'YT'].includes(cc)) cc = 'FR';
+  const pool = ZONES.filter(z => !cc || z.c === cc);
+  if (!pool.length) return null;
+  const n = norm(state);
+  const byName = n && pool.find(z => n === norm(z.n) || n.includes(norm(z.n)));
+  if (byName) return byName;
+  const k = Math.cos(lat * Math.PI / 180);
+  return pool.reduce((best, z) =>
+    ((z.lat - lat) ** 2 + ((z.lng - lon) * k) ** 2) < ((best.lat - lat) ** 2 + ((best.lng - lon) * k) ** 2) ? z : best);
+}
+
+// Zone par défaut : celle mémorisée par la page d’accueil, sinon celle de la position de la personne.
+export async function defaultZone() {
+  let s = null; try { s = localStorage.getItem('sel'); } catch {}
+  if (s && ZONES.some(z => z.id === s)) return s;
+  if (!navigator.geolocation) return '';
+  return new Promise(res => navigator.geolocation.getCurrentPosition(async p => {
+    const z = await zoneFrom(p.coords.latitude, p.coords.longitude); res(z ? z.id : '');
+  }, () => res(''), { timeout: 8000, maximumAge: 600000 }));
+}

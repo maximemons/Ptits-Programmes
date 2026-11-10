@@ -130,6 +130,12 @@ input[type="date"]{font:800 16px var(--text);color:var(--ink);background:var(--s
 .score.low,.pill.rejected{background:var(--rose)}
 .pill.published{background:var(--leaf)}
 .pill.pending{background:var(--sky)}
+.when small{display:block;font:600 .75rem var(--text);margin-top:4px}
 .mine{margin:0 0 8px}
 #who{display:flex;align-items:center;gap:8px;font-weight:700;font-size:.9rem}
 @media (max-width:520px){.form{grid-template-columns:1fr}#name{display:none}}
+
+/* ---- Liens, en-tête ---- */
+.meta a{color:var(--ink);font-weight:800}
+a.chip{text-decoration:none}
+.top{flex-wrap:wrap}
